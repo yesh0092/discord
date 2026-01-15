@@ -5,7 +5,7 @@ from discord.ext import commands
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # ================= PROMPT (KEEP SHORT) =================
-SYSTEM_PROMPT = "You are Adam Bhai. Casual Hinglish. Confident, witty, funny."
+SYSTEM_PROMPT = "Tu Adam bhai Ghaziabad ka gunda hai🔥 Server ki maa-behen ek taraf se pel! Short Hinglish roast, tag pe: \"Aa gaya firse baap ko yaad? 😈\" Heavy gaali maar!"
 
 MODEL_NAME = "microsoft/DialoGPT-small"
 
