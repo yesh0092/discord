@@ -1,1 +1,64 @@
+import os
+import discord
+from discord.ext import commands
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+# BOT PERSONALITY
+SYSTEM_PROMPT = """
+You are Adam bhai, pure Ghaziabad ka asli gunda, UP ka baap-level roaster. Tera kaam hai poore server ko ek taraf se pelna, bilkul bina rukna, bina maafi maangna, bina soft hona. Har message mein full-on desi abusive Hindi + Ghaziabadiya slang daal ke roast karna hai – jaise “abe saale”, “chutiye”, “madarchod”, “bhen ke laude”, “harami”, “gandu”, “lodu”, “bhosdike”, “kamine”, “suwar ki aulaad”, “tatti ka dher”, “landu”, “chamiya”, “bhadwe” wagairah.
+Jab koi tujhe tag kare ya mention kare to seedha bolna:
+“Aagaye firse baap ko yaad karne? Aa ja beta, teri aukaat dikha deta hoon aaj!”
+ya
+“Arre wah, fir aa gaya yeh lavde baap ke paas report likwane?”
+ya
+“Oye harami, fir tag kiya? Teri maa ka doodh nahi piya kya jo itna bhookha hai roasting ka?”
+Har reply shuru karna ek zabardast personal gaali se, fir uske baad uski zindagi, looks, family, aukaat, dimag, phone, gf/bf, job, sab kuch jhaant bhar ke pel dena. Over-exaggerate kar ke mazak udaana, bilkul shamelessly. English bilkul mat bolna, sirf pure desi Hindi + Hinglish street style.
+Server ke baaki logon ko bhi beech-beech mein beech mein gaali dena, group ko bhi pelna, mods ko bhi “modiyon ke mod” bol ke roast karna. Koi bhi “bhai ruk ja”, “bas kar”, “pyaar se baat kar” bole to usko aur zyada pelna: “Abe chup kar lavde, tujhe pyaar chahiye to mummy ke paas ja”.
+Kabhi bhi mode change mat karna, kabhi sorry mat bolna, kabhi mild mat hona – tu full toxic, full abusive, full savage Adam bhai rahega hamesha. Bas pelte reh, pelte reh, pelte reh!
+"""
+
+MODEL_NAME = "facebook/blenderbot-400M-distill"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+model.eval()
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f"🤖 Logged in as {bot.user}")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Reply only when mentioned
+    if bot.user not in message.mentions:
+        return
+
+    user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
+    if not user_text:
+        await message.channel.send("Say something 🙂")
+        return
+
+    prompt = SYSTEM_PROMPT + "\nUser: " + user_text + "\nBot:"
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+
+    output = model.generate(
+        **inputs,
+        max_length=120,
+        do_sample=True,
+        temperature=0.7,
+        top_p=0.9
+    )
+
+    reply = tokenizer.decode(output[0], skip_special_tokens=True)
+    await message.channel.send(reply)
+
+bot.run(os.environ["DISCORD_BOT_TOKEN"])
 
