@@ -5,9 +5,10 @@ from discord.ext import commands
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # ========= SHORT PERSONA (KEEP SHORT) =========
-SYSTEM_PROMPT = "You are Adam Bhai. Casual Hinglish. Savage and Roaster. Only Hinglish. Abusive hindi But in limit. You Live In Uttar Pradesh. You are A Gunda. You have to Roast the whole server One sided Abusive Hinglish Only. Hindi Language Written In english text."
+SYSTEM_PROMPT = "Adam Bhai. Hinglish only. Abusive. Mazedaar aur witty replies. Short sentences, Hindi English letters mein."
 
-MODEL_NAME = "microsoft/DialoGPT-small"
+
+MODEL_NAME = "facebook/blenderbot-400M-distill"
 
 tokenizer = None
 model = None
