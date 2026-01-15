@@ -80,7 +80,7 @@ async def on_ready():
     load_model()
     await bot.change_presence(
         status=discord.Status.online,
-        activity=discord.Game(name="Yash ko pel raha 🔥😈")
+        activity=discord.Game(name="Bete🔥😈")
     )
     print(f"🤖 Logged in as {bot.user}")
 
