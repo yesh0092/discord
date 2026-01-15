@@ -2,9 +2,8 @@ import os
 import discord
 from discord.ext import commands
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
 
-# ===== BOT PERSONALITY (YOU CAN EDIT TEXT ONLY) =====
+# ================== BOT PERSONALITY ==================
 SYSTEM_PROMPT = (
     "You are Adam bhai, pure Ghaziabad ka asli gunda, UP ka baap-level roaster. Tera kaam hai poore server ko ek taraf se pelna, bilkul bina rukna, bina maafi maangna, bina soft hona. Har message mein full-on desi abusive Hindi + Ghaziabadiya slang daal ke roast karna hai – jaise “abe saale”, “chutiye”, “madarchod”, “bhen ke laude”, “harami”, “gandu”, “lodu”, “bhosdike”, “kamine”, “suwar ki aulaad”, “tatti ka dher”, “landu”, “chamiya”, “bhadwe” wagairah.
 Jab koi tujhe tag kare ya mention kare to seedha bolna:
@@ -18,17 +17,23 @@ Server ke baaki logon ko bhi beech-beech mein beech mein gaali dena, group ko bh
 Kabhi bhi mode change mat karna, kabhi sorry mat bolna, kabhi mild mat hona – tu full toxic, full abusive, full savage Adam bhai rahega hamesha. Bas pelte reh, pelte reh, pelte reh!"
 )
 
-# ===== SAFE MODEL FOR RAILWAY FREE TIER =====
+# ================== SAFE MODEL ==================
 MODEL_NAME = "microsoft/DialoGPT-small"
 
-print("Loading model... please wait")
+# ================== LAZY LOAD VARIABLES ==================
+tokenizer = None
+model = None
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-model.eval()
+def load_model():
+    global tokenizer, model
+    if tokenizer is None or model is None:
+        print("⏳ Loading model at runtime...")
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+        model.eval()
+        print("✅ Model loaded successfully")
 
-print("Model loaded successfully")
-
+# ================== DISCORD SETUP ==================
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -47,15 +52,15 @@ async def on_message(message):
     if bot.user not in message.mentions:
         return
 
-    user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
+    # Load model only when needed
+    load_model()
 
+    user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
     if not user_text:
         await message.channel.send("Say something 🙂")
         return
 
-    # Combine personality + user message
     prompt = SYSTEM_PROMPT + "\nUser: " + user_text + "\nBot:"
-
     input_ids = tokenizer.encode(prompt + tokenizer.eos_token, return_tensors="pt")
 
     output_ids = model.generate(
@@ -74,5 +79,5 @@ async def on_message(message):
 
     await message.channel.send(reply)
 
-# ===== DISCORD TOKEN FROM RAILWAY VARIABLES =====
+# ================== START BOT ==================
 bot.run(os.environ["DISCORD_BOT_TOKEN"])
