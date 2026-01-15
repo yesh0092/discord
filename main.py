@@ -3,24 +3,12 @@ import discord
 from discord.ext import commands
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# ================== BOT PERSONALITY ==================
-SYSTEM_PROMPT = (
-    """You are Adam bhai, pure Ghaziabad ka asli gunda, UP ka baap-level roaster. Tera kaam hai poore server ko ek taraf se pelna, bilkul bina rukna, bina maafi maangna, bina soft hona. Har message mein full-on desi abusive Hindi + Ghaziabadiya slang daal ke roast karna hai – jaise “abe saale”, “chutiye”, “madarchod”, “bhen ke laude”, “harami”, “gandu”, “lodu”, “bhosdike”, “kamine”, “suwar ki aulaad”, “tatti ka dher”, “landu”, “chamiya”, “bhadwe” wagairah.
-Jab koi tujhe tag kare ya mention kare to seedha bolna:
-“Aagaye firse baap ko yaad karne? Aa ja beta, teri aukaat dikha deta hoon aaj!”
-ya
-“Arre wah, fir aa gaya yeh lavde baap ke paas report likwane?”
-ya
-“Oye harami, fir tag kiya? Teri maa ka doodh nahi piya kya jo itna bhookha hai roasting ka?”
-Har reply shuru karna ek zabardast personal gaali se, fir uske baad uski zindagi, looks, family, aukaat, dimag, phone, gf/bf, job, sab kuch jhaant bhar ke pel dena. Over-exaggerate kar ke mazak udaana, bilkul shamelessly. English bilkul mat bolna, sirf pure desi Hindi + Hinglish street style.
-Server ke baaki logon ko bhi beech-beech mein beech mein gaali dena, group ko bhi pelna, mods ko bhi “modiyon ke mod” bol ke roast karna. Koi bhi “bhai ruk ja”, “bas kar”, “pyaar se baat kar” bole to usko aur zyada pelna: “Abe chup kar lavde, tujhe pyaar chahiye to mummy ke paas ja”.
-Kabhi bhi mode change mat karna, kabhi sorry mat bolna, kabhi mild mat hona – tu full toxic, full abusive, full savage Adam bhai rahega hamesha. Bas pelte reh, pelte reh, pelte reh!"""
-)
+# ================== IMPORTANT ==================
+# KEEP THIS PROMPT SHORT (see rules below)
+SYSTEM_PROMPT = "You are Adam bhai, Ghaziabad ka savage roaster 🔥 One-sided heavy roast poore server ko! Short Hinglish + emojis. Light abuses (chutiye, harami, lavde). Tag pe: "Aa gaya firse baap ko yaad? 😈" Fun but brutal!"
 
-# ================== SAFE MODEL ==================
 MODEL_NAME = "microsoft/DialoGPT-small"
 
-# ================== LAZY LOAD VARIABLES ==================
 tokenizer = None
 model = None
 
@@ -28,12 +16,14 @@ def load_model():
     global tokenizer, model
     if tokenizer is None or model is None:
         print("⏳ Loading model at runtime...")
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_NAME,
+            padding_side="left"   # FIX for decoder-only models
+        )
         model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
         model.eval()
-        print("✅ Model loaded successfully")
+        print("✅ Model loaded")
 
-# ================== DISCORD SETUP ==================
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -41,6 +31,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
+    await bot.change_presence(
+        status=discord.Status.online,
+        activity=discord.Game(name="Chatting 💬")
+    )
     print(f"🤖 Logged in as {bot.user}")
 
 @bot.event
@@ -48,36 +42,39 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Bot replies ONLY when mentioned
+    # BOT REPLIES ONLY WHEN MENTIONED
     if bot.user not in message.mentions:
         return
 
-    # Load model only when needed
     load_model()
 
     user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
     if not user_text:
-        await message.channel.send("Say something 🙂")
+        await message.channel.send("Bol bhai 🙂")
         return
 
-    prompt = SYSTEM_PROMPT + "\nUser: " + user_text + "\nBot:"
-    input_ids = tokenizer.encode(prompt + tokenizer.eos_token, return_tensors="pt")
+    # DialoGPT works best with SHORT context
+    input_text = SYSTEM_PROMPT + " " + user_text + tokenizer.eos_token
+
+    input_ids = tokenizer.encode(input_text, return_tensors="pt")
 
     output_ids = model.generate(
         input_ids,
-        max_length=120,
+        max_new_tokens=80,          # ✅ CORRECT
         do_sample=True,
-        temperature=0.7,
+        temperature=0.8,
         top_p=0.9,
         pad_token_id=tokenizer.eos_token_id
     )
 
     reply = tokenizer.decode(
-        output_ids[:, input_ids.shape[-1]:][0],
+        output_ids[0][input_ids.shape[-1]:],
         skip_special_tokens=True
     )
 
+    if reply.strip() == "":
+        reply = "Haan bhai, bol 🙂"
+
     await message.channel.send(reply)
 
-# ================== START BOT ==================
 bot.run(os.environ["DISCORD_BOT_TOKEN"])
