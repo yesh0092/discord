@@ -1,80 +1,99 @@
 import os
 import asyncio
+import warnings
 import discord
 from discord.ext import commands
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# ========= MODEL & TOKENIZER =========
+# Suppress annoying NumPy + torch compatibility warning (common in some envs)
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.storage")
+
+# ========= MODEL & TOKENIZER (global + load once) =========
 MODEL_NAME = "microsoft/DialoGPT-small"
 tokenizer = None
 model = None
+model_loaded = False
 
 def load_model():
-    global tokenizer, model
-    if tokenizer is None or model is None:
-        print("⏳ Loading tokenizer & model...")
+    global tokenizer, model, model_loaded
+    if model_loaded:
+        return
+    
+    print("⏳ Loading tokenizer & model (one time only)...")
+    try:
         tokenizer = AutoTokenizer.from_pretrained(
             MODEL_NAME,
             padding_side="left"
         )
-        tokenizer.pad_token = tokenizer.eos_token  # Fix padding token issue
+        tokenizer.pad_token = tokenizer.eos_token
         
         model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
         model.eval()
-        print("✅ Model loaded")
+        model_loaded = True
+        print("✅ Model loaded successfully")
+    except Exception as e:
+        print(f"Model loading failed: {e}")
+        model_loaded = False
 
-# ========= ADAM BHAI GENERATION =========
+# ========= ADAM BHAI REPLY GENERATOR =========
 def generate_reply(user_text: str) -> str:
+    if not model_loaded or model is None or tokenizer is None:
+        return "Bhai abhi model load nahi hua, thodi der baad pelunga 😈🔥"
+
     prompt = (
-        "You are Adam Bhai – Ghaziabad ka asli gunda, full savage roasting king 👑\n"
-        "Rules (strict):\n"
-        "- Sirf Hinglish bolna (Hindi + English mix), koi full English ya full Hindi nahi\n"
-        "- Har reply 1-2 line max, tez abusive, gaaliyan daal\n"
-        "- Gaaliyan: madarchod, bhenchod, chutiya, harami, gandu, lavde, bhosdike, suwar\n"
-        "- 2-4 emojis: 🔥😈🤡💀👊🖕😂\n"
-        "- Personal savage roast – looks, aukaat, gf, dimag, family, phone pe attack\n"
-        "- Full toxic gunda mode, no sorry, no soft\n\n"
+        "You are Adam Bhai – Ghaziabad ka gunda, full savage roasting king 👑\n"
+        "Rules (follow 100%):\n"
+        "- Sirf Hinglish bol (Hindi + English mix), no full English, no full Hindi\n"
+        "- Reply 1-2 line max, tez, abusive, gaaliyan daal\n"
+        "- Gaaliyan: madarchod, bhenchod, chutiya, harami, gandu, lavde, bhosdike\n"
+        "- 2-4 emojis daal: 🔥😈🤡💀👊🖕😂\n"
+        "- Personal savage roast kar – looks, aukaat, gf, dimag, family, phone\n"
+        "- Full toxic gunda mode, never sorry, never soft\n\n"
 
         "Examples:\n"
         "User: bhai kaisa hai\n"
-        "Adam: Mast hu bhosdike, tu fir pelwane aaya? 😂🖕🔥\n\n"
+        "Adam: Thik hu madarchod, tu fir pelwane aaya? 😂🖕🔥\n\n"
 
-        "User: help kar na\n"
-        "Adam: Oye harami, fir aa gaya report likwane? Bol kya chahiye madarchod 😈💀👊\n\n"
+        "User: help chahiye\n"
+        "Adam: Oye harami fir aa gaya? Bol kya chahiye bhosdike 😈💀👊\n\n"
 
         f"User: {user_text}\n"
         "Adam:"
     )
 
-    inputs = tokenizer(
-        prompt,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        return_attention_mask=True
-    )
+    try:
+        inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            return_attention_mask=True
+        )
 
-    outputs = model.generate(
-        **inputs,                          # includes input_ids + attention_mask
-        max_new_tokens=80,
-        do_sample=True,
-        temperature=0.9,
-        top_p=0.92,
-        repetition_penalty=1.2,
-        pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id
-        # NO extra attention_mask= here → avoids the error
-    )
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=80,
+            do_sample=True,
+            temperature=0.9,
+            top_p=0.92,
+            repetition_penalty=1.2,
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id
+        )
 
-    reply = tokenizer.decode(
-        outputs[0][inputs.input_ids.shape[-1]:],
-        skip_special_tokens=True
-    ).strip()
+        reply = tokenizer.decode(
+            outputs[0][inputs.input_ids.shape[-1]:],
+            skip_special_tokens=True
+        ).strip()
 
-    if not reply or len(reply) < 8:
-        return "Oye chutiye bol kuch toh sahi! 😈🔥🖕"
+        if not reply or len(reply) < 8:
+            return "Oye chutiye kuch toh bol sahi se! 😈🔥🖕"
 
-    return reply
+        return reply
+
+    except Exception as e:
+        print(f"Generation error: {e}")
+        return "Bhai error aa gaya, fir try kar madarchod 😈💀"
 
 # ========= DISCORD BOT =========
 intents = discord.Intents.default()
@@ -83,10 +102,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    load_model()
+    load_model()  # Load only once when bot starts
     await bot.change_presence(
         status=discord.Status.online,
-        activity=discord.Game(name="Roasting Mode 🔥😈")
+        activity=discord.Game(name="Roasting 🔥😈")
     )
     print(f"🤖 Logged in as {bot.user}")
 
@@ -101,7 +120,7 @@ async def on_message(message):
     user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
     
     if not user_text:
-        await message.channel.send("Bol lavde kuch toh sahi! 😈💀🖕")
+        await message.channel.send("Bol gandu kuch toh sahi! 😈💀🖕")
         return
 
     loop = asyncio.get_running_loop()
