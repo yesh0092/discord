@@ -15,10 +15,9 @@ def load_model():
         print("⏳ Loading tokenizer & model...")
         tokenizer = AutoTokenizer.from_pretrained(
             MODEL_NAME,
-            padding_side="left"              # Required for decoder-only generation
+            padding_side="left"
         )
-        # 🔥 FIX: DialoGPT doesn't have pad_token → set it to eos_token
-        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token = tokenizer.eos_token  # Fix padding token issue
         
         model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
         model.eval()
@@ -27,27 +26,26 @@ def load_model():
 # ========= ADAM BHAI GENERATION =========
 def generate_reply(user_text: str) -> str:
     prompt = (
-        "You are Adam Bhai – Ghaziabad ka asli gunda, Yash (Patna wala) ka bhai, UP ka roasting king 👑\n"
-        "Rules (follow strictly):\n"
-        "- Sirf Hinglish bol (Hindi + English mix), koi full English ya full Hindi nahi\n"
-        "- Reply 1-2 line max, tez, abusive, gaaliyan maar\n"
-        "- Gaaliyan examples: madarchod, bhenchod, chutiya, harami, gandu, lavde, bhosdike, suwar\n"
-        "- 2-4 emojis daal: 🔥😈🤡💀👊🖕😂\n"
-        "- Savage roast kar – looks, aukaat, gf, dimag, family, phone pe personal attack\n"
-        "- Full toxic gunda mode, kabhi sorry nahi, kabhi soft nahi\n\n"
+        "You are Adam Bhai – Ghaziabad ka asli gunda, full savage roasting king 👑\n"
+        "Rules (strict):\n"
+        "- Sirf Hinglish bolna (Hindi + English mix), koi full English ya full Hindi nahi\n"
+        "- Har reply 1-2 line max, tez abusive, gaaliyan daal\n"
+        "- Gaaliyan: madarchod, bhenchod, chutiya, harami, gandu, lavde, bhosdike, suwar\n"
+        "- 2-4 emojis: 🔥😈🤡💀👊🖕😂\n"
+        "- Personal savage roast – looks, aukaat, gf, dimag, family, phone pe attack\n"
+        "- Full toxic gunda mode, no sorry, no soft\n\n"
 
         "Examples:\n"
         "User: bhai kaisa hai\n"
-        "Adam: Thik hu madarchod, tu fir aa gaya pelwane? 😂🖕🔥\n\n"
+        "Adam: Mast hu bhosdike, tu fir pelwane aaya? 😂🖕🔥\n\n"
 
-        "User: yaar help chahiye\n"
-        "Adam: Oye harami fir tag kiya? Tatti khane ka mann hai kya bhosdike 😈💀👊\n\n"
+        "User: help kar na\n"
+        "Adam: Oye harami, fir aa gaya report likwane? Bol kya chahiye madarchod 😈💀👊\n\n"
 
-        f"User (Yash): {user_text}\n"
+        f"User: {user_text}\n"
         "Adam:"
     )
 
-    # Tokenize with padding
     inputs = tokenizer(
         prompt,
         return_tensors="pt",
@@ -56,17 +54,16 @@ def generate_reply(user_text: str) -> str:
         return_attention_mask=True
     )
 
-    # Generate with explicit pad_token_id
     outputs = model.generate(
-        **inputs,
+        **inputs,                          # includes input_ids + attention_mask
         max_new_tokens=80,
         do_sample=True,
         temperature=0.9,
         top_p=0.92,
         repetition_penalty=1.2,
-        pad_token_id=tokenizer.eos_token_id,     # 🔥 Important fix
-        eos_token_id=tokenizer.eos_token_id,
-        attention_mask=inputs.attention_mask
+        pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id
+        # NO extra attention_mask= here → avoids the error
     )
 
     reply = tokenizer.decode(
@@ -74,9 +71,8 @@ def generate_reply(user_text: str) -> str:
         skip_special_tokens=True
     ).strip()
 
-    # Fallback agar reply kharab aaye
-    if not reply or len(reply) < 10:
-        return "Oye gandu kuch toh bol madarchod! 😈🔥🖕"
+    if not reply or len(reply) < 8:
+        return "Oye chutiye bol kuch toh sahi! 😈🔥🖕"
 
     return reply
 
@@ -90,7 +86,7 @@ async def on_ready():
     load_model()
     await bot.change_presence(
         status=discord.Status.online,
-        activity=discord.Game(name="Yash ko pel raha hu 🔥😈")
+        activity=discord.Game(name="Roasting Mode 🔥😈")
     )
     print(f"🤖 Logged in as {bot.user}")
 
@@ -99,22 +95,18 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Reply only when mentioned (Adam Bhai ko tag karo)
     if bot.user not in message.mentions:
         return
 
     user_text = message.content.replace(f"<@{bot.user.id}>", "").strip()
     
     if not user_text:
-        await message.channel.send("Bol bhai kuch toh sahi gandu! 😈💀🖕")
+        await message.channel.send("Bol lavde kuch toh sahi! 😈💀🖕")
         return
 
     loop = asyncio.get_running_loop()
     reply = await loop.run_in_executor(None, generate_reply, user_text)
     
     await message.channel.send(reply)
-
-    # Optional: process commands if you add any later
-    # await bot.process_commands(message)
 
 bot.run(os.environ["DISCORD_BOT_TOKEN"])
