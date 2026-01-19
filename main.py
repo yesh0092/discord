@@ -236,21 +236,22 @@ async def on_member_join(member):
             )
 
     try:
-        embed = discord.Embed(
-            title="🔥 Welcome to HellFire Hangout 🔥",
-            description=(
-                "We're thrilled to have you here!\n\n"
-                "**Make sure to check out these important places:**\n"
-                "• 💖 **Self Roles** – personalize your vibe\n"
-                "• 🎮 **Gaming Roles** – squad up & play\n"
-                "• 🎟 **Support Tickets** – need help? we got you\n\n"
-                "This is a chill hangout space for gaming, vibes, and conversations.\n"
-                "Respect everyone, enjoy the atmosphere, and have fun 🔥\n\n"
-                "**HellFire Hangout | DM me anytime for help**"
-            ),
-            color=0x7c2d12
-        )
-        embed.set_footer(text="Type `support` anytime to contact staff")
+       embed = discord.Embed(
+    title="Welcome to HellFire Hangout",
+    description=(
+        "We're thrilled to have you here!\n\n"
+        "Make sure to check out the following channels:\n\n"
+        "• **HellFire Hangout** – #👋・self-roles\n"
+        "• **HellFire Hangout** – #🎮・gaming-roles\n"
+        "• **HellFire Hangout** – #🎫・tickets\n\n"
+        "If you have any questions, feel free to reach out to our staff.\n"
+        "Enjoy your stay!"
+    ),
+    color=0x2b2d31
+)
+
+embed.set_footer(text="HellFire Hangout | DM me if you need help")
+
 
         await member.send(embed=embed)
 
