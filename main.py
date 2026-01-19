@@ -9,15 +9,13 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
 if not TOKEN:
-    raise RuntimeError("TOKEN not found in environment variables")
+    raise RuntimeError("TOKEN not set")
 
 # ================= CONFIG =================
 SUPPORT_ROLE = "Support"
 ADMIN_ROLE = "Admin"
 LOG_CHANNEL = "support-logs"
-MODERATOR_ID = 123456789012345678  # 🔁 REPLACE WITH REAL USER ID
-
-ROLE_KEYWORDS = ["artist", "role", "apply", "creative"]
+MODERATOR_ID = 123456789012345678  # 🔁 replace
 
 # ================= INTENTS =================
 intents = discord.Intents.default()
@@ -41,17 +39,55 @@ async def on_ready():
         )
     )
 
-# ================= WELCOME EMBED =================
+# ================= ONBOARDING BUTTON VIEW =================
+class OnboardingView(discord.ui.View):
+    def __init__(self, member):
+        super().__init__(timeout=None)
+        self.member = member
+
+    @discord.ui.button(label="Support", emoji="🛟", style=discord.ButtonStyle.primary)
+    async def support(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "I’ve prepared a private space for you.",
+            ephemeral=True
+        )
+        await create_support_room(self.member)
+
+    @discord.ui.button(label="Creative Roles", emoji="🎨", style=discord.ButtonStyle.secondary)
+    async def roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        moderator = await bot.fetch_user(MODERATOR_ID)
+        await interaction.response.send_message(
+            f"Some roles are handled personally.\nPlease reach out to {moderator.mention}.",
+            ephemeral=True
+        )
+        await moderator.send(f"🎨 {self.member} is interested in a creative role.")
+
+    @discord.ui.button(label="Events", emoji="📅", style=discord.ButtonStyle.success)
+    async def events(self, interaction: discord.Interaction, button: discord.ui.Button):
+        event_users.add(self.member.id)
+        await interaction.response.send_message(
+            "You’ll receive event updates here.",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Just Exploring", emoji="🌫", style=discord.ButtonStyle.secondary)
+    async def explore(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Take your time. I’ll be here if you need me.",
+            ephemeral=True
+        )
+
+# ================= WELCOME EMBED + DM =================
 @bot.event
-async def on_member_join(member: discord.Member):
-    # ---- Server Welcome (Embed) ----
+async def on_member_join(member):
+    # ---- Server Welcome Embed ----
     if member.guild.system_channel:
         embed = discord.Embed(
-            title="Welcome",
+            title="Welcome to HellFire",
             description=(
                 f"{member.mention}\n\n"
-                "You’ve arrived in a calm space.\n"
-                "Take your time. Explore at your pace."
+                "A calm place. A private space.\n"
+                "Move at your own pace."
             ),
             color=0x0f172a
         )
@@ -61,87 +97,23 @@ async def on_member_join(member: discord.Member):
     # ---- DM Onboarding ----
     await asyncio.sleep(3)
     try:
-        await member.send(
-            "Welcome.\n\n"
-            "This space is designed to stay calm and intentional.\n"
-            "I’ll quietly help you when you need it."
+        embed = discord.Embed(
+            title="Welcome",
+            description=(
+                "I’ll quietly guide you if you need help.\n\n"
+                "Choose how you’d like to begin."
+            ),
+            color=0x020617
         )
-        await asyncio.sleep(2)
-        await member.send(
-            "**Here’s how I can help:**\n\n"
-            "• If you need **support**, just message me anytime.\n"
-            "• If you’re interested in **creative roles**, say `artist` or `apply`.\n"
-            "• If you want **event updates**, say `events`.\n\n"
-            "No commands needed. Speak naturally."
-        )
+        await member.send(embed=embed, view=OnboardingView(member))
     except discord.Forbidden:
-        pass  # User has DMs closed
-
-# ================= BASIC COMMANDS =================
-
-@bot.command()
-async def ping(ctx):
-    """Check if bot is alive"""
-    await ctx.send("🏓 Pong. I’m here.")
-
-@bot.command()
-async def helpme(ctx):
-    """Show help"""
-    embed = discord.Embed(
-        title="Bot Help",
-        description=(
-            "`!ping` → Check if bot is online\n"
-            "`!support` → How to get support\n"
-            "`!announce <message>` → Send event update (Admin)\n"
-            "`!close` → Close support room (Support)"
-        ),
-        color=0x1f2937
-    )
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def support(ctx):
-    await ctx.send("📩 Please DM me directly to begin support.")
-
-# ================= DM HANDLER =================
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    # -------- DM LOGIC --------
-    if isinstance(message.channel, discord.DMChannel):
-        user = message.author
-        content = message.content.lower()
-
-        # Prevent duplicate rooms
-        if user.id in active_rooms:
-            return
-
-        # ---- ROLE REDIRECT ----
-        if any(k in content for k in ROLE_KEYWORDS):
-            moderator = await bot.fetch_user(MODERATOR_ID)
-            await user.send(
-                "Some roles are handled personally.\n"
-                "I’ll connect you with the right person."
-            )
-            await user.send(f"Please reach out to {moderator.mention}.")
-            await moderator.send(f"🔔 {user} is interested in a role.")
-            return
-
-        # ---- EVENT OPT-IN ----
-        if "event" in content:
-            event_users.add(user.id)
-            await user.send("You’ll receive event updates here.")
-            return
-
-        # ---- SUPPORT FLOW ----
-        await create_support_room(user)
-
-    await bot.process_commands(message)
+        pass
 
 # ================= SUPPORT ROOM =================
-async def create_support_room(user: discord.User):
+async def create_support_room(user):
+    if user.id in active_rooms:
+        return
+
     guild = bot.guilds[0]
     support_role = discord.utils.get(guild.roles, name=SUPPORT_ROLE)
 
@@ -162,7 +134,6 @@ async def create_support_room(user: discord.User):
 
     active_rooms[user.id] = channel.id
 
-    await user.send("I’ve prepared a private space for you.")
     await channel.send(
         "**You’re safe here.**\n"
         "Explain what you need, and someone will assist you shortly."
@@ -172,7 +143,11 @@ async def create_support_room(user: discord.User):
     if log:
         await log.send(f"🕊 Support room opened for {user}")
 
-# ================= CLOSE ROOM =================
+# ================= COMMANDS (DEBUG & STAFF) =================
+@bot.command()
+async def ping(ctx):
+    await ctx.send("🏓 Pong. Bot is working.")
+
 @bot.command()
 @commands.has_role(SUPPORT_ROLE)
 async def close(ctx):
@@ -184,7 +159,6 @@ async def close(ctx):
             active_rooms.pop(uid)
             break
 
-# ================= ANNOUNCE EVENT =================
 @bot.command()
 @commands.has_role(ADMIN_ROLE)
 async def announce(ctx, *, message):
@@ -200,7 +174,7 @@ async def announce(ctx, *, message):
             await user.send(embed=embed)
             sent += 1
             await asyncio.sleep(1)
-        except discord.Forbidden:
+        except:
             event_users.discard(uid)
 
     await ctx.send(f"Event sent to {sent} members.")
@@ -209,7 +183,7 @@ async def announce(ctx, *, message):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRole):
-        await ctx.send("You don’t have permission for this command.")
+        await ctx.send("You don’t have permission.")
     else:
         print(error)
 
