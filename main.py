@@ -234,6 +234,7 @@ async def help(ctx):
             title="Commands",
             description=(
                 "`support` → DM the bot for help\n"
+                "`!announce <message>` → DM announcement (Admin)\n"
                 "`!welcome` → set welcome channel (Admin)\n"
                 "`!supportlog` → set support log channel (Admin)\n"
                 "`!autorole @role` → auto role on join"
@@ -265,6 +266,39 @@ async def autorole(ctx, role: discord.Role):
     AUTO_ROLE_ID = role.id
     MAIN_GUILD_ID = ctx.guild.id
     await ctx.send(embed=discord.Embed(description="Auto role set.", color=0x020617))
+
+# ================= DM ANNOUNCE =================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def announce(ctx, *, message: str):
+    guild = ctx.guild
+    embed = discord.Embed(
+        title="📢 Announcement",
+        description=message,
+        color=0x020617
+    )
+    embed.set_footer(text=guild.name)
+
+    sent = 0
+    failed = 0
+
+    for member in guild.members:
+        if member.bot:
+            continue
+        try:
+            await member.send(embed=embed)
+            sent += 1
+            await asyncio.sleep(1)  # rate-limit safety
+        except:
+            failed += 1
+
+    await ctx.send(
+        embed=discord.Embed(
+            description=f"Announcement sent.\nDelivered: {sent}\nFailed: {failed}",
+            color=0x1f2937
+        )
+    )
 
 # ================= READY =================
 
