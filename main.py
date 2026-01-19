@@ -14,12 +14,20 @@ if not TOKEN:
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ================= ADMIN-SET CHANNELS =================
 WELCOME_CHANNEL_ID = None
-ONBOARDING_MESSAGES = {}  # user_id -> message_id
+SUPPORT_LOG_CHANNEL_ID = None
+
+# ================= GIF / IMAGE CONFIG =================
+WELCOME_GIF = ""   # optional
+ONBOARDING_GIF = ""  # optional
+SUPPORT_GIF = ""   # optional
+
+# ================= ONBOARDING STATE =================
+ONBOARDING_MESSAGES = {}
 
 # ================= READY =================
 @bot.event
@@ -28,7 +36,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="welcoming quietly 🌙"
+            name="quietly 🌙"
         )
     )
 
@@ -38,8 +46,7 @@ class OnboardingView(discord.ui.View):
         super().__init__(timeout=120)
         self.user = user
 
-    async def finish_onboarding(self, interaction: discord.Interaction):
-        # Delete onboarding message
+    async def finish(self, interaction: discord.Interaction):
         msg_id = ONBOARDING_MESSAGES.pop(self.user.id, None)
         if msg_id:
             try:
@@ -49,107 +56,137 @@ class OnboardingView(discord.ui.View):
                 pass
 
         await interaction.response.send_message(
-            "Thank you 💫\nEnjoy your time here — we’re glad you joined.",
+            "Thank you for sharing ✨\n"
+            "Enjoy your time here — we’re glad to have you.",
             ephemeral=True
         )
 
     @discord.ui.button(label="Friends", emoji="👥", style=discord.ButtonStyle.primary)
     async def friends(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+        await self.finish(interaction)
 
     @discord.ui.button(label="Social Media", emoji="🌐", style=discord.ButtonStyle.secondary)
     async def social(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+        await self.finish(interaction)
 
     @discord.ui.button(label="Other", emoji="✨", style=discord.ButtonStyle.success)
     async def other(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+        await self.finish(interaction)
 
 # ================= MEMBER JOIN =================
 @bot.event
 async def on_member_join(member: discord.Member):
-    # ---- DM WELCOME (PERMANENT) ----
+    # ---- DM WELCOME ----
     try:
         await asyncio.sleep(2)
         await member.send(
             f"👋 **Welcome to {member.guild.name}!**\n\n"
-            "Enjoy your time with us 💖\n"
-            "This server is built to stay calm and friendly.\n\n"
-            "🛟 If you ever need **support**, just DM me anytime."
+            "We’re happy to have you here.\n"
+            "Take your time, explore freely, and enjoy the atmosphere ✨\n\n"
+            "🛟 If you ever need **support**, just DM me `support`."
         )
-    except discord.Forbidden:
+        if WELCOME_GIF:
+            await member.send(WELCOME_GIF)
+    except:
         return
 
     # ---- DM ONBOARDING (TEMPORARY) ----
     await asyncio.sleep(1)
-    try:
-        embed = discord.Embed(
-            title="One quick question",
-            description="How did you find this server?",
-            color=0x020617
-        )
-        onboarding_msg = await member.send(
-            embed=embed,
-            view=OnboardingView(member)
-        )
-        ONBOARDING_MESSAGES[member.id] = onboarding_msg.id
-    except discord.Forbidden:
-        pass
+    embed = discord.Embed(
+        title="One quick question",
+        description="How did you find this server?",
+        color=0x020617
+    )
+    msg = await member.send(embed=embed, view=OnboardingView(member))
+    ONBOARDING_MESSAGES[member.id] = msg.id
 
-    # ---- SERVER JOIN MESSAGE ----
+    # ---- SERVER WELCOME MESSAGE ----
     if WELCOME_CHANNEL_ID:
         channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
         if channel:
             embed = discord.Embed(
-                description=f"✨ **{member.mention} just joined the server!**\nWelcome 💫",
+                description=f"✨ **{member.mention} joined the server**\nWelcome and enjoy your stay 💫",
                 color=0x1f2937
             )
             await channel.send(embed=embed)
 
-# ================= DM TEXT REPLY HANDLER =================
+# ================= DM MESSAGE HANDLER =================
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # If user replies in DM instead of clicking
+    # ---- DM SUPPORT ----
     if isinstance(message.channel, discord.DMChannel):
-        user_id = message.author.id
+        content = message.content.lower()
 
-        if user_id in ONBOARDING_MESSAGES:
+        # Remove onboarding if user replies
+        if message.author.id in ONBOARDING_MESSAGES:
             try:
-                msg = await message.channel.fetch_message(ONBOARDING_MESSAGES[user_id])
+                msg = await message.channel.fetch_message(
+                    ONBOARDING_MESSAGES.pop(message.author.id)
+                )
                 await msg.delete()
             except:
                 pass
 
-            ONBOARDING_MESSAGES.pop(user_id, None)
-
             await message.channel.send(
-                "Thank you 💫\nEnjoy your time here — we’re glad you joined."
+                "Thank you ✨\nEnjoy your time here — we’re glad you joined."
             )
+            return
+
+        if content == "support":
+            await handle_support_request(message.author)
             return
 
     await bot.process_commands(message)
 
-# ================= SET WELCOME CHANNEL =================
+# ================= SUPPORT HANDLER =================
+async def handle_support_request(user: discord.User):
+    if SUPPORT_LOG_CHANNEL_ID:
+        guild = bot.guilds[0]
+        log_channel = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(
+                title="New Support Request",
+                description=(
+                    f"👤 User: {user.mention}\n"
+                    f"🆔 ID: `{user.id}`\n\n"
+                    "User requested support via DM."
+                ),
+                color=0x7c2d12
+            )
+            await log_channel.send(embed=embed)
+
+    await user.send(
+        "🛟 **Support Request Received**\n\n"
+        "A staff member from the server will contact you in your DMs\n"
+        "**within 24 hours**.\n\n"
+        "Thank you for your patience 💫"
+    )
+
+    if SUPPORT_GIF:
+        await user.send(SUPPORT_GIF)
+
+# ================= ADMIN COMMANDS =================
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def welcome(ctx):
     global WELCOME_CHANNEL_ID
     WELCOME_CHANNEL_ID = ctx.channel.id
+    await ctx.send("✅ This channel is now set for welcome messages.")
 
-    embed = discord.Embed(
-        title="Welcome Channel Set",
-        description=f"Join messages will be sent in {ctx.channel.mention}",
-        color=0x10b981
-    )
-    await ctx.send(embed=embed)
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def support(ctx):
+    global SUPPORT_LOG_CHANNEL_ID
+    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
+    await ctx.send("✅ This channel is now set for support logs.")
 
 # ================= TEST =================
 @bot.command()
 async def ping(ctx):
-    await ctx.send("🏓 Pong — all systems active.")
+    await ctx.send("🏓 Pong — system online.")
 
 # ================= RUN =================
 bot.run(TOKEN)
