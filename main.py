@@ -4,23 +4,22 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-# ================== LOAD ENV ==================
+# ================= LOAD TOKEN =================
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
 if not TOKEN:
-    raise RuntimeError("TOKEN environment variable not set")
+    raise RuntimeError("TOKEN not found in environment variables")
 
-# ================== CONFIG ==================
-SUPPORT_ROLE_NAME = "Support"
-ADMIN_ROLE_NAME = "Admin"
-LOG_CHANNEL_NAME = "support-logs"
+# ================= CONFIG =================
+SUPPORT_ROLE = "Support"
+ADMIN_ROLE = "Admin"
+LOG_CHANNEL = "support-logs"
+MODERATOR_ID = 123456789012345678  # ← replace with real ID
 
-MODERATOR_ID = 123456789012345678  # 🔁 REPLACE WITH REAL USER ID
+ROLE_KEYWORDS = ["artist", "role", "apply", "creative"]
 
-ROLE_KEYWORDS = ["role", "artist", "apply", "creative"]
-
-# ================== INTENTS ==================
+# ================= INTENTS =================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -28,155 +27,154 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================== STATE ==================
-active_support_rooms = {}      # user_id -> channel_id
-event_opt_in_users = set()     # user_ids
+active_rooms = {}
+event_users = set()
 
-# ================== READY ==================
+# ================= READY =================
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="quietly 🌙"
-        )
+        activity=discord.Game(name="DM me for support 🌙")
     )
 
-# ================== WELCOME + ONBOARDING ==================
+# ================= BASIC COMMANDS =================
+
+@bot.command()
+async def ping(ctx):
+    """Check if bot is alive"""
+    await ctx.send("🏓 Pong! Bot is working.")
+
+@bot.command()
+async def helpme(ctx):
+    """Show bot help"""
+    await ctx.send(
+        "**Bot Commands**\n"
+        "`!ping` → check bot status\n"
+        "`!support` → start support (DM only)\n"
+        "`!announce <msg>` → send event DM (Admin)\n"
+        "`!close` → close support room (Support)"
+    )
+
+# ================= WELCOME =================
 @bot.event
-async def on_member_join(member: discord.Member):
-    # Minimal public welcome
+async def on_member_join(member):
     if member.guild.system_channel:
         await member.guild.system_channel.send(f"Welcome, {member.mention}.")
 
-    await asyncio.sleep(3)
-
+    await asyncio.sleep(2)
     try:
         await member.send(
             "Welcome.\n"
-            "I’ll help you find your way here.\n\n"
-            "If you need **support**, just message me.\n"
-            "If you’re interested in **roles**, say `artist` or `apply`.\n"
-            "If you want **event updates**, say `events`."
+            "DM me anytime for **support**.\n"
+            "Say `artist` or `apply` for roles.\n"
+            "Say `events` for updates."
         )
-    except discord.Forbidden:
-        pass  # User has DMs closed
+    except:
+        pass
 
-# ================== DM HANDLER ==================
+# ================= SUPPORT COMMAND =================
+@bot.command()
+async def support(ctx):
+    """Tell user to DM bot"""
+    await ctx.send("📩 Please DM me to start support.")
+
+# ================= DM HANDLER =================
 @bot.event
-async def on_message(message: discord.Message):
+async def on_message(message):
     if message.author.bot:
         return
 
-    # -------- HANDLE DMs ONLY --------
+    # -------- DM LOGIC --------
     if isinstance(message.channel, discord.DMChannel):
         user = message.author
         content = message.content.lower()
 
-        # Prevent duplicate rooms
-        if user.id in active_support_rooms:
+        # Already has room
+        if user.id in active_rooms:
             return
 
-        # -------- ROLE REDIRECT --------
-        if any(keyword in content for keyword in ROLE_KEYWORDS):
-            moderator = await bot.fetch_user(MODERATOR_ID)
-
+        # ROLE REDIRECT
+        if any(k in content for k in ROLE_KEYWORDS):
+            mod = await bot.fetch_user(MODERATOR_ID)
             await user.send(
-                "Some roles are handled personally.\n"
-                "I’ll connect you with the right person."
+                "Roles are handled personally.\n"
+                f"Please contact {mod.mention}."
             )
-            await user.send(f"Please reach out to {moderator.mention}.")
-
-            try:
-                await moderator.send(f"{user} is interested in a role.")
-            except discord.Forbidden:
-                pass
-
+            await mod.send(f"{user} wants a role.")
             return
 
-        # -------- EVENT OPT-IN --------
+        # EVENT OPT-IN
         if "event" in content:
-            event_opt_in_users.add(user.id)
-            await user.send("You’ll receive event updates here.")
+            event_users.add(user.id)
+            await user.send("✅ You’ll receive event updates.")
             return
 
-        # -------- SUPPORT FLOW --------
-        await create_support_room(user)
+        # SUPPORT FLOW
+        guild = bot.guilds[0]
+        support_role = discord.utils.get(guild.roles, name=SUPPORT_ROLE)
+
+        if not support_role:
+            await user.send("Support role not configured.")
+            return
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            support_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        }
+
+        channel = await guild.create_text_channel(
+            f"room-{user.name.lower()}",
+            overwrites=overwrites
+        )
+
+        active_rooms[user.id] = channel.id
+
+        await user.send("🕊 A private support room has been created.")
+        await channel.send("You’re safe here. Explain your issue.")
+
+        log = discord.utils.get(guild.text_channels, name=LOG_CHANNEL)
+        if log:
+            await log.send(f"Support room opened for {user}")
 
     await bot.process_commands(message)
 
-# ================== SUPPORT ROOM CREATION ==================
-async def create_support_room(user: discord.User):
-    guild = bot.guilds[0]  # Single-server bot assumption
-    support_role = discord.utils.get(guild.roles, name=SUPPORT_ROLE_NAME)
-
-    if not support_role:
-        await user.send("Support system is not configured yet.")
-        return
-
-    overwrites = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        support_role: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-    }
-
-    channel = await guild.create_text_channel(
-        name=f"room-{user.name.lower()}",
-        overwrites=overwrites
-    )
-
-    active_support_rooms[user.id] = channel.id
-
-    await user.send("I’ve prepared a private space for you.")
-    await channel.send("You’re safe here.\nTake your time.")
-
-    log = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
-    if log:
-        await log.send(f"🕊 Support room opened for {user}")
-
-# ================== CLOSE ROOM ==================
+# ================= CLOSE ROOM =================
 @bot.command()
-@commands.has_role(SUPPORT_ROLE_NAME)
-async def close(ctx: commands.Context):
-    user_id = None
-
-    for uid, cid in active_support_rooms.items():
+@commands.has_role(SUPPORT_ROLE)
+async def close(ctx):
+    for uid, cid in list(active_rooms.items()):
         if cid == ctx.channel.id:
-            user_id = uid
+            await ctx.send("Closing room…")
+            await asyncio.sleep(5)
+            await ctx.channel.delete()
+            active_rooms.pop(uid)
             break
 
-    if not user_id:
-        return
-
-    await ctx.send("This space will fade now.")
-    await asyncio.sleep(10)
-
-    await ctx.channel.delete()
-    active_support_rooms.pop(user_id, None)
-
-# ================== EVENT ANNOUNCE ==================
+# ================= ANNOUNCE EVENT =================
 @bot.command()
-@commands.has_role(ADMIN_ROLE_NAME)
-async def announce(ctx: commands.Context, *, message: str):
+@commands.has_role(ADMIN_ROLE)
+async def announce(ctx, *, msg):
     sent = 0
-
-    for uid in list(event_opt_in_users):
+    for uid in list(event_users):
         try:
             user = await bot.fetch_user(uid)
-            await user.send(message)
+            await user.send(f"📢 **Event Update**\n{msg}")
             sent += 1
             await asyncio.sleep(1)
-        except discord.Forbidden:
-            event_opt_in_users.discard(uid)
+        except:
+            event_users.discard(uid)
 
-    await ctx.send(f"Event sent to {sent} members.")
+    await ctx.send(f"✅ Event sent to {sent} users.")
 
-# ================== ERROR HANDLING ==================
+# ================= ERROR HANDLING =================
 @bot.event
 async def on_command_error(ctx, error):
-    # Silent by design (luxury behavior)
-    pass
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You don’t have permission.")
+    else:
+        print(error)
 
-# ================== RUN ==================
+# ================= RUN =================
 bot.run(TOKEN)
