@@ -389,3 +389,4 @@ async def announce(ctx, *, message: str):
 async def on_ready():
     print(f"✅ {bot.user} is online")
 
+bot.run(TOKEN)
