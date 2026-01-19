@@ -387,6 +387,8 @@ async def announce(ctx, *, message: str):
 
 @bot.event
 async def on_ready():
-    print(f"✅ {bot.user} is online")
-
-bot.run(TOKEN)
+    await bot.change_presence(
+        status=discord.Status.idle,
+        activity=discord.Game("!help | Open ticket")
+    )
+    print(f"✅ {bot.user} is online (idle)")
