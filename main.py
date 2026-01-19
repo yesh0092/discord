@@ -37,55 +37,12 @@ SUPPORT_LOG_CHANNEL_ID = None
 AUTO_ROLE_ID = None
 
 ONBOARDING_MESSAGES = {}
-OPEN_TICKETS = {}              # user_id -> channel_id
-TICKET_COOLDOWNS = {}          # user_id -> datetime
-TICKET_BANS = {}               # user_id -> datetime | "perm"
+OPEN_TICKETS = {}
 
 # ================= HELPERS =================
 
 def get_guild():
     return bot.get_guild(MAIN_GUILD_ID) if MAIN_GUILD_ID else None
-
-def now():
-    return datetime.datetime.utcnow()
-
-def parse_duration(arg: str):
-    if arg == "perm":
-        return "perm"
-    try:
-        value = int(arg[:-1])
-        unit = arg[-1]
-        if unit == "m":
-            return now() + datetime.timedelta(minutes=value)
-        if unit == "h":
-            return now() + datetime.timedelta(hours=value)
-        if unit == "d":
-            return now() + datetime.timedelta(days=value)
-    except:
-        pass
-    return None
-
-def can_create_ticket(user: discord.Member):
-    # Admin bypass
-    if user.guild_permissions.administrator:
-        return True, None
-
-    ban = TICKET_BANS.get(user.id)
-    if ban:
-        if ban == "perm":
-            return False, "You are restricted from creating support tickets."
-        if now() < ban:
-            return False, "You are temporarily restricted from creating tickets."
-        del TICKET_BANS[user.id]
-
-    last = TICKET_COOLDOWNS.get(user.id)
-    if last and now() - last < datetime.timedelta(hours=24):
-        return False, "Please wait before creating another ticket."
-
-    if user.id in OPEN_TICKETS:
-        return False, "You already have an active ticket."
-
-    return True, None
 
 # ================= ONBOARDING VIEW =================
 
@@ -120,7 +77,7 @@ class OnboardingView(discord.ui.View):
     async def other(self, interaction, _):
         await self.finish(interaction)
 
-# ================= CLOSE TICKET VIEW =================
+# ================= CLOSE TICKET VIEW (NEW) =================
 
 class CloseTicketView(discord.ui.View):
     def __init__(self, owner_id: int):
@@ -129,12 +86,11 @@ class CloseTicketView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", emoji="🔒", style=discord.ButtonStyle.danger)
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        staff_role = discord.utils.get(interaction.guild.roles, name=STAFF_ROLE_NAME)
+        guild = interaction.guild
+        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
 
-        if (
-            interaction.user.id != self.owner_id
-            and not interaction.user.guild_permissions.administrator
-            and (not staff_role or staff_role not in interaction.user.roles)
+        if interaction.user.id != self.owner_id and (
+            not staff_role or staff_role not in interaction.user.roles
         ):
             await interaction.response.send_message(
                 embed=discord.Embed(
@@ -148,14 +104,14 @@ class CloseTicketView(discord.ui.View):
         button.disabled = True
         await interaction.message.edit(view=self)
 
-        OPEN_TICKETS.pop(self.owner_id, None)
-
         await interaction.response.send_message(
             embed=discord.Embed(
-                description="Ticket closed. This channel will be deleted.",
+                description="Ticket closed. This space will be archived.",
                 color=0x020617
             )
         )
+
+        OPEN_TICKETS.pop(self.owner_id, None)
 
         await asyncio.sleep(3)
         await interaction.channel.delete()
@@ -177,9 +133,11 @@ class SupportView(discord.ui.View):
             )
             return
 
-        allowed, reason = can_create_ticket(self.user)
-        if not allowed:
-            await interaction.response.send_message(reason, ephemeral=True)
+        if self.user.id in OPEN_TICKETS:
+            await interaction.response.send_message(
+                "You already have an active ticket.",
+                ephemeral=True
+            )
             return
 
         staff = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
@@ -199,7 +157,6 @@ class SupportView(discord.ui.View):
         )
 
         OPEN_TICKETS[self.user.id] = channel.id
-        TICKET_COOLDOWNS[self.user.id] = now()
 
         await channel.send(
             embed=discord.Embed(
@@ -244,32 +201,148 @@ class SupportView(discord.ui.View):
             ephemeral=True
         )
 
-# ================= ADMIN TICKET BAN =================
+# ================= MEMBER JOIN =================
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def ticketban(ctx, member: discord.Member, duration: str):
-    parsed = parse_duration(duration)
-    if not parsed:
-        await ctx.send("Invalid duration. Use `1h`, `1d`, `perm`.")
+@bot.event
+async def on_member_join(member):
+    if AUTO_ROLE_ID:
+        role = member.guild.get_role(AUTO_ROLE_ID)
+        if role:
+            await member.add_roles(role)
+
+    if WELCOME_CHANNEL_ID:
+        ch = member.guild.get_channel(WELCOME_CHANNEL_ID)
+        if ch:
+            await ch.send(
+                embed=discord.Embed(
+                    description=f"✨ {member.mention} joined the server",
+                    color=0x1f2937
+                )
+            )
+
+    try:
+        await member.send(
+            f"Welcome to **{member.guild.name}**.\n"
+            "If you need help, DM me `support`."
+        )
+        if GIF_WELCOME:
+            await member.send(GIF_WELCOME)
+
+        embed = discord.Embed(
+            title="One quick question",
+            description="How did you discover this server?",
+            color=0x020617
+        )
+        msg = await member.send(embed=embed, view=OnboardingView(member))
+        ONBOARDING_MESSAGES[member.id] = msg.id
+
+        if GIF_ONBOARDING:
+            await member.send(GIF_ONBOARDING)
+    except:
+        pass
+
+# ================= DM HANDLER =================
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
         return
 
-    TICKET_BANS[member.id] = parsed
+    if isinstance(message.channel, discord.DMChannel):
+        if message.author.id in ONBOARDING_MESSAGES:
+            try:
+                msg = await message.channel.fetch_message(
+                    ONBOARDING_MESSAGES.pop(message.author.id)
+                )
+                await msg.delete()
+            except:
+                pass
+            await message.channel.send("Thank you ✨")
+            return
+
+        if message.content.lower() == "support":
+            await message.channel.send(
+                "How would you like to proceed?",
+                view=SupportView(message.author)
+            )
+            if GIF_SUPPORT:
+                await message.channel.send(GIF_SUPPORT)
+            return
+
+    await bot.process_commands(message)
+
+# ================= COMMANDS =================
+
+@bot.command()
+async def help(ctx):
     await ctx.send(
         embed=discord.Embed(
-            description=f"{member.mention} has been restricted from creating tickets.",
-            color=0x7c2d12
+            title="Bot Commands",
+            description=(
+                "`support` → DM the bot for support\n"
+                "`!announce <message>` → DM announcement (Admin)\n"
+                "`!welcome` → set welcome channel (Admin)\n"
+                "`!supportlog` → set support log channel (Admin)\n"
+                "`!autorole @role` → auto role on join"
+            ),
+            color=0x020617
         )
     )
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def ticketunban(ctx, member: discord.Member):
-    TICKET_BANS.pop(member.id, None)
+async def welcome(ctx):
+    global WELCOME_CHANNEL_ID, MAIN_GUILD_ID
+    WELCOME_CHANNEL_ID = ctx.channel.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Welcome channel set.", color=0x020617))
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def supportlog(ctx):
+    global SUPPORT_LOG_CHANNEL_ID, MAIN_GUILD_ID
+    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Support log channel set.", color=0x020617))
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def autorole(ctx, role: discord.Role):
+    global AUTO_ROLE_ID, MAIN_GUILD_ID
+    AUTO_ROLE_ID = role.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Auto role set.", color=0x020617))
+
+# ================= DM ANNOUNCE =================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def announce(ctx, *, message: str):
+    guild = ctx.guild
+    embed = discord.Embed(
+        title="📢 Announcement",
+        description=message,
+        color=0x020617
+    )
+    embed.set_footer(text=guild.name)
+
+    sent = 0
+    failed = 0
+
+    for member in guild.members:
+        if member.bot:
+            continue
+        try:
+            await member.send(embed=embed)
+            sent += 1
+            await asyncio.sleep(1)
+        except:
+            failed += 1
+
     await ctx.send(
         embed=discord.Embed(
-            description=f"{member.mention} can create tickets again.",
-            color=0x020617
+            description=f"Announcement sent.\nDelivered: {sent}\nFailed: {failed}",
+            color=0x1f2937
         )
     )
 
