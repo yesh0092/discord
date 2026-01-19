@@ -3,12 +3,9 @@ import asyncio
 import datetime
 import discord
 from discord.ext import commands
-from discord import app_commands
 from dotenv import load_dotenv
 
-# ======================================================
-# BASIC SETUP
-# ======================================================
+# ================= BASIC SETUP =================
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -23,48 +20,31 @@ bot = commands.Bot(
     help_command=None
 )
 
-# ======================================================
-# CONFIG (EDIT)
-# ======================================================
+# ================= CONFIG =================
 
 STAFF_ROLE_NAME = "Staff"
 SUPPORT_CATEGORY_NAME = "SUPPORT"
 
-GIF_WELCOME_DM = ""
+GIF_WELCOME = ""
 GIF_ONBOARDING = ""
-GIF_SUPPORT_PANEL = ""
-GIF_TICKET_CREATED = ""
+GIF_SUPPORT = ""
 
-# ======================================================
-# STATE (IN-MEMORY)
-# ======================================================
+# ================= STATE =================
 
+MAIN_GUILD_ID = None
 WELCOME_CHANNEL_ID = None
 SUPPORT_LOG_CHANNEL_ID = None
 AUTO_ROLE_ID = None
 
 ONBOARDING_MESSAGES = {}
-TICKET_COOLDOWNS = {}
 OPEN_TICKETS = {}
 
-# ======================================================
-# UTILITIES
-# ======================================================
+# ================= HELPERS =================
 
-def now():
-    return datetime.datetime.utcnow()
+def get_guild():
+    return bot.get_guild(MAIN_GUILD_ID) if MAIN_GUILD_ID else None
 
-def can_create_ticket(user_id):
-    last = TICKET_COOLDOWNS.get(user_id)
-    if last and now() - last < datetime.timedelta(hours=24):
-        return False
-    if user_id in OPEN_TICKETS:
-        return False
-    return True
-
-# ======================================================
-# ONBOARDING VIEW
-# ======================================================
+# ================= ONBOARDING VIEW =================
 
 class OnboardingView(discord.ui.View):
     def __init__(self, user):
@@ -80,87 +60,102 @@ class OnboardingView(discord.ui.View):
             except:
                 pass
 
-        for item in self.children:
-            item.disabled = True
-
         await interaction.response.send_message(
-            embed=discord.Embed(
-                description="Thank you ✨ Enjoy your time here.",
-                color=0x020617
-            ),
+            "Thanks ✨ Enjoy your time here.",
             ephemeral=True
         )
 
-    @discord.ui.button(label="Friends", emoji="👥", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Friends", style=discord.ButtonStyle.primary)
     async def friends(self, interaction, _):
         await self.finish(interaction)
 
-    @discord.ui.button(label="Social Media", emoji="🌐", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Social Media", style=discord.ButtonStyle.secondary)
     async def social(self, interaction, _):
         await self.finish(interaction)
 
-    @discord.ui.button(label="Other", emoji="✨", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Other", style=discord.ButtonStyle.success)
     async def other(self, interaction, _):
         await self.finish(interaction)
 
-# ======================================================
-# TICKET CLOSE VIEW
-# ======================================================
+# ================= SUPPORT VIEW =================
 
-class CloseTicketView(discord.ui.View):
-    def __init__(self, owner_id):
-        super().__init__(timeout=None)
-        self.owner_id = owner_id
+class SupportView(discord.ui.View):
+    def __init__(self, user):
+        super().__init__(timeout=120)
+        self.user = user
 
-    @discord.ui.button(label="Close Ticket", emoji="🔒", style=discord.ButtonStyle.danger)
-    async def close(self, interaction, button):
-        if interaction.user.id != self.owner_id and not any(
-            r.name == STAFF_ROLE_NAME for r in interaction.user.roles
-        ):
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="You don’t have permission to close this ticket.",
-                    color=0x7c2d12
-                ),
-                ephemeral=True
-            )
+    @discord.ui.button(label="Open Support Ticket", emoji="🎟", style=discord.ButtonStyle.primary)
+    async def ticket(self, interaction, _):
+        guild = get_guild()
+        if not guild:
+            await interaction.response.send_message("Support is not configured yet.", ephemeral=True)
             return
 
-        button.disabled = True
-        await interaction.message.edit(view=self)
+        if self.user.id in OPEN_TICKETS:
+            await interaction.response.send_message("You already have an open ticket.", ephemeral=True)
+            return
 
-        # Transcript
-        transcript = []
-        async for msg in interaction.channel.history(oldest_first=True):
-            transcript.append(f"[{msg.created_at}] {msg.author}: {msg.content}")
+        staff = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
+        category = discord.utils.get(guild.categories, name=SUPPORT_CATEGORY_NAME)
 
-        text = "\n".join(transcript)[:1900]
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+        if staff:
+            overwrites[staff] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+        channel = await guild.create_text_channel(
+            f"ticket-{self.user.name}",
+            overwrites=overwrites,
+            category=category
+        )
+
+        OPEN_TICKETS[self.user.id] = channel.id
+
+        await channel.send(
+            embed=discord.Embed(
+                title="Support Ticket",
+                description=f"{self.user.mention}\nStaff will assist you here.",
+                color=0x020617
+            )
+        )
 
         if SUPPORT_LOG_CHANNEL_ID:
-            log = interaction.guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
+            log = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
             if log:
                 await log.send(
                     embed=discord.Embed(
-                        title="Ticket Transcript",
-                        description=f"```\n{text}\n```",
+                        description=f"🎟 Ticket opened by {self.user.mention}",
                         color=0x1f2937
                     )
                 )
 
-        OPEN_TICKETS.pop(self.owner_id, None)
+        await interaction.response.send_message(
+            "Your ticket has been opened in the server.",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Personal Assistance", emoji="🧑‍💼", style=discord.ButtonStyle.secondary)
+    async def personal(self, interaction, _):
+        guild = get_guild()
+        if SUPPORT_LOG_CHANNEL_ID and guild:
+            log = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
+            if log:
+                await log.send(
+                    embed=discord.Embed(
+                        title="Personal Assistance",
+                        description=f"{self.user.mention} requested personal help.",
+                        color=0x7c2d12
+                    )
+                )
 
         await interaction.response.send_message(
-            embed=discord.Embed(
-                description="Ticket closed. This channel will be deleted.",
-                color=0x020617
-            )
+            "A staff member will contact you within 24 hours.",
+            ephemeral=True
         )
-        await asyncio.sleep(3)
-        await interaction.channel.delete()
 
-# ======================================================
-# MEMBER JOIN
-# ======================================================
+# ================= MEMBER JOIN =================
 
 @bot.event
 async def on_member_join(member):
@@ -181,17 +176,14 @@ async def on_member_join(member):
 
     try:
         await member.send(
-            embed=discord.Embed(
-                title=f"Welcome to {member.guild.name}",
-                description="If you need help, DM me `support`.",
-                color=0x020617
-            )
+            f"Welcome to **{member.guild.name}**.\n"
+            "If you need help, DM me `support`."
         )
-        if GIF_WELCOME_DM:
-            await member.send(GIF_WELCOME_DM)
+        if GIF_WELCOME:
+            await member.send(GIF_WELCOME)
 
         embed = discord.Embed(
-            title="One quick question",
+            title="Quick question",
             description="How did you find this server?",
             color=0x020617
         )
@@ -203,9 +195,7 @@ async def on_member_join(member):
     except:
         pass
 
-# ======================================================
-# DM HANDLER
-# ======================================================
+# ================= DM HANDLER =================
 
 @bot.event
 async def on_message(message):
@@ -221,128 +211,65 @@ async def on_message(message):
                 await msg.delete()
             except:
                 pass
-            await message.channel.send(
-                embed=discord.Embed(
-                    description="Thank you ✨",
-                    color=0x020617
-                )
-            )
+            await message.channel.send("Thanks ✨")
             return
 
         if message.content.lower() == "support":
-            if not can_create_ticket(message.author.id):
-                await message.channel.send(
-                    embed=discord.Embed(
-                        description="You can create one ticket per day.",
-                        color=0x7c2d12
-                    )
-                )
-                return
-
-            guild = bot.guilds[0]
-            staff = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
-            category = discord.utils.get(guild.categories, name=SUPPORT_CATEGORY_NAME)
-
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                message.author: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-                staff: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            }
-
-            channel = await guild.create_text_channel(
-                f"ticket-{message.author.name}",
-                overwrites=overwrites,
-                category=category
+            await message.channel.send(
+                "How would you like to proceed?",
+                view=SupportView(message.author)
             )
-
-            OPEN_TICKETS[message.author.id] = channel.id
-            TICKET_COOLDOWNS[message.author.id] = now()
-
-            await channel.send(
-                embed=discord.Embed(
-                    title="Support Ticket",
-                    description="Staff will assist you here.",
-                    color=0x020617
-                ),
-                view=CloseTicketView(message.author.id)
-            )
-
-            if GIF_TICKET_CREATED:
-                await message.author.send(GIF_TICKET_CREATED)
-
-            if SUPPORT_LOG_CHANNEL_ID:
-                log = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
-                if log:
-                    await log.send(
-                        embed=discord.Embed(
-                            description=f"🎟 Ticket opened by {message.author.mention}",
-                            color=0x1f2937
-                        )
-                    )
+            if GIF_SUPPORT:
+                await message.channel.send(GIF_SUPPORT)
             return
 
     await bot.process_commands(message)
 
-# ======================================================
-# COMMANDS
-# ======================================================
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def welcome(ctx):
-    global WELCOME_CHANNEL_ID
-    WELCOME_CHANNEL_ID = ctx.channel.id
-    await ctx.send(embed=discord.Embed(description="Welcome channel set.", color=0x020617))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def supportlog(ctx):
-    global SUPPORT_LOG_CHANNEL_ID
-    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
-    await ctx.send(embed=discord.Embed(description="Support log channel set.", color=0x020617))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def autorole(ctx, role: discord.Role):
-    global AUTO_ROLE_ID
-    AUTO_ROLE_ID = role.id
-    await ctx.send(embed=discord.Embed(description="Auto role set.", color=0x020617))
+# ================= COMMANDS =================
 
 @bot.command()
 async def help(ctx):
     await ctx.send(
         embed=discord.Embed(
-            title="Help",
-            description="DM `support` to open a ticket.",
+            title="Commands",
+            description=(
+                "`support` → DM the bot for help\n"
+                "`!welcome` → set welcome channel (Admin)\n"
+                "`!supportlog` → set support log channel (Admin)\n"
+                "`!autorole @role` → auto role on join"
+            ),
             color=0x020617
         )
     )
 
-# ======================================================
-# SLASH COMMANDS
-# ======================================================
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def welcome(ctx):
+    global WELCOME_CHANNEL_ID, MAIN_GUILD_ID
+    WELCOME_CHANNEL_ID = ctx.channel.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Welcome channel set.", color=0x020617))
 
-@bot.tree.command(name="support")
-async def slash_support(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        embed=discord.Embed(
-            description="Please DM me `support` to open a ticket.",
-            color=0x020617
-        ),
-        ephemeral=True
-    )
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def supportlog(ctx):
+    global SUPPORT_LOG_CHANNEL_ID, MAIN_GUILD_ID
+    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Support log channel set.", color=0x020617))
 
-@bot.tree.command(name="ping")
-async def slash_ping(interaction: discord.Interaction):
-    await interaction.response.send_message("Pong.", ephemeral=True)
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def autorole(ctx, role: discord.Role):
+    global AUTO_ROLE_ID, MAIN_GUILD_ID
+    AUTO_ROLE_ID = role.id
+    MAIN_GUILD_ID = ctx.guild.id
+    await ctx.send(embed=discord.Embed(description="Auto role set.", color=0x020617))
 
-# ======================================================
-# READY
-# ======================================================
+# ================= READY =================
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"✅ {bot.user} online")
+    print(f"✅ {bot.user} is online")
 
 bot.run(TOKEN)
