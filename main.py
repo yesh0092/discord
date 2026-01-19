@@ -61,7 +61,7 @@ class OnboardingView(discord.ui.View):
                 pass
 
         await interaction.response.send_message(
-            "Thanks ✨ Enjoy your time here.",
+            "Thank you. Enjoy your time here ✨",
             ephemeral=True
         )
 
@@ -77,6 +77,45 @@ class OnboardingView(discord.ui.View):
     async def other(self, interaction, _):
         await self.finish(interaction)
 
+# ================= CLOSE TICKET VIEW (NEW) =================
+
+class CloseTicketView(discord.ui.View):
+    def __init__(self, owner_id: int):
+        super().__init__(timeout=None)
+        self.owner_id = owner_id
+
+    @discord.ui.button(label="Close Ticket", emoji="🔒", style=discord.ButtonStyle.danger)
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
+
+        if interaction.user.id != self.owner_id and (
+            not staff_role or staff_role not in interaction.user.roles
+        ):
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="You don’t have permission to close this ticket.",
+                    color=0x7c2d12
+                ),
+                ephemeral=True
+            )
+            return
+
+        button.disabled = True
+        await interaction.message.edit(view=self)
+
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                description="Ticket closed. This space will be archived.",
+                color=0x020617
+            )
+        )
+
+        OPEN_TICKETS.pop(self.owner_id, None)
+
+        await asyncio.sleep(3)
+        await interaction.channel.delete()
+
 # ================= SUPPORT VIEW =================
 
 class SupportView(discord.ui.View):
@@ -88,11 +127,17 @@ class SupportView(discord.ui.View):
     async def ticket(self, interaction, _):
         guild = get_guild()
         if not guild:
-            await interaction.response.send_message("Support is not configured yet.", ephemeral=True)
+            await interaction.response.send_message(
+                "Support system is not configured yet.",
+                ephemeral=True
+            )
             return
 
         if self.user.id in OPEN_TICKETS:
-            await interaction.response.send_message("You already have an open ticket.", ephemeral=True)
+            await interaction.response.send_message(
+                "You already have an active ticket.",
+                ephemeral=True
+            )
             return
 
         staff = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
@@ -116,9 +161,10 @@ class SupportView(discord.ui.View):
         await channel.send(
             embed=discord.Embed(
                 title="Support Ticket",
-                description=f"{self.user.mention}\nStaff will assist you here.",
+                description=f"{self.user.mention}\nA staff member will assist you shortly.",
                 color=0x020617
-            )
+            ),
+            view=CloseTicketView(self.user.id)
         )
 
         if SUPPORT_LOG_CHANNEL_ID:
@@ -132,7 +178,7 @@ class SupportView(discord.ui.View):
                 )
 
         await interaction.response.send_message(
-            "Your ticket has been opened in the server.",
+            "Your ticket has been created.",
             ephemeral=True
         )
 
@@ -151,7 +197,7 @@ class SupportView(discord.ui.View):
                 )
 
         await interaction.response.send_message(
-            "A staff member will contact you within 24 hours.",
+            "A staff member will contact you privately within 24 hours.",
             ephemeral=True
         )
 
@@ -183,8 +229,8 @@ async def on_member_join(member):
             await member.send(GIF_WELCOME)
 
         embed = discord.Embed(
-            title="Quick question",
-            description="How did you find this server?",
+            title="One quick question",
+            description="How did you discover this server?",
             color=0x020617
         )
         msg = await member.send(embed=embed, view=OnboardingView(member))
@@ -211,7 +257,7 @@ async def on_message(message):
                 await msg.delete()
             except:
                 pass
-            await message.channel.send("Thanks ✨")
+            await message.channel.send("Thank you ✨")
             return
 
         if message.content.lower() == "support":
@@ -231,9 +277,9 @@ async def on_message(message):
 async def help(ctx):
     await ctx.send(
         embed=discord.Embed(
-            title="Commands",
+            title="Bot Commands",
             description=(
-                "`support` → DM the bot for help\n"
+                "`support` → DM the bot for support\n"
                 "`!announce <message>` → DM announcement (Admin)\n"
                 "`!welcome` → set welcome channel (Admin)\n"
                 "`!supportlog` → set support log channel (Admin)\n"
@@ -289,7 +335,7 @@ async def announce(ctx, *, message: str):
         try:
             await member.send(embed=embed)
             sent += 1
-            await asyncio.sleep(1)  # rate-limit safety
+            await asyncio.sleep(1)
         except:
             failed += 1
 
