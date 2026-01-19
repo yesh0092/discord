@@ -2,17 +2,17 @@ import os
 import asyncio
 import datetime
 import discord
+import aiosqlite
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 
 # ======================================================
-# BASIC SETUP
+# ENV / BOT SETUP
 # ======================================================
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-if not TOKEN:
-    raise RuntimeError("TOKEN not found")
 
 intents = discord.Intents.default()
 intents.members = True
@@ -24,157 +24,134 @@ bot = commands.Bot(
     help_command=None
 )
 
+DB_PATH = "supportbot.db"
+
 # ======================================================
-# GIF / IMAGE CONFIG (EDIT HERE ONLY)
+# DATABASE
 # ======================================================
 
-GIF_WELCOME_DM = ""
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executescript("""
+        CREATE TABLE IF NOT EXISTS guilds (
+            guild_id INTEGER PRIMARY KEY,
+            welcome_channel INTEGER,
+            support_log INTEGER,
+            support_category INTEGER,
+            staff_role INTEGER,
+            auto_role INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS tickets (
+            user_id INTEGER,
+            guild_id INTEGER,
+            last_created TIMESTAMP,
+            open INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS ticket_bans (
+            user_id INTEGER,
+            guild_id INTEGER,
+            until TIMESTAMP
+        );
+        """)
+        await db.commit()
+
+# ======================================================
+# GIF CONFIG
+# ======================================================
+
+GIF_WELCOME = ""
 GIF_ONBOARDING = ""
 GIF_SUPPORT_PANEL = ""
 GIF_TICKET_CREATED = ""
-GIF_PERSONAL_ASSIST = ""
+GIF_TICKET_CLOSED = ""
 
 # ======================================================
-# CONFIG
+# READY
 # ======================================================
 
-STAFF_ROLE_NAME = "Staff"
-SUPPORT_CATEGORY_NAME = "SUPPORT"
-
-WELCOME_CHANNEL_ID = None
-SUPPORT_LOG_CHANNEL_ID = None
-
-# ======================================================
-# STATE
-# ======================================================
-
-ONBOARDING_MESSAGES = {}
-TICKET_COOLDOWNS = {}
-TICKET_BANS = {}
-OPEN_TICKETS = set()
+@bot.event
+async def on_ready():
+    await init_db()
+    await bot.tree.sync()
+    print(f"✅ {bot.user} online")
 
 # ======================================================
 # UTILITIES
 # ======================================================
 
-def utcnow():
+def now():
     return datetime.datetime.utcnow()
-
-def can_create_ticket(user_id):
-    if user_id in OPEN_TICKETS:
-        return False, "You already have an open ticket."
-
-    if user_id in TICKET_BANS:
-        ban = TICKET_BANS[user_id]
-        if ban == "perm":
-            return False, "You are restricted from creating tickets."
-        if utcnow() < ban:
-            return False, "You are temporarily restricted from creating tickets."
-        del TICKET_BANS[user_id]
-
-    last = TICKET_COOLDOWNS.get(user_id)
-    if last and utcnow() - last < datetime.timedelta(hours=24):
-        return False, "You can only create one ticket every 24 hours."
-
-    return True, None
 
 # ======================================================
 # ONBOARDING VIEW
 # ======================================================
 
 class OnboardingView(discord.ui.View):
-    def __init__(self, user):
+    def __init__(self):
         super().__init__(timeout=120)
-        self.user = user
 
-    async def finish(self, interaction):
-        msg_id = ONBOARDING_MESSAGES.pop(self.user.id, None)
-        if msg_id:
-            try:
-                msg = await interaction.channel.fetch_message(msg_id)
-                await msg.delete()
-            except:
-                pass
+    async def disable(self, interaction):
+        for item in self.children:
+            item.disabled = True
+        await interaction.message.edit(view=self)
 
+    @discord.ui.button(label="Friends", style=discord.ButtonStyle.primary)
+    async def friends(self, interaction, _):
+        await self.disable(interaction)
         await interaction.response.send_message(
-            "Thank you ✨ Enjoy your time here.",
-            ephemeral=True
+            "Thank you. Enjoy your time here.", ephemeral=True
         )
 
-    @discord.ui.button(label="Friends", emoji="👥", style=discord.ButtonStyle.primary)
-    async def friends(self, interaction, _):
-        await self.finish(interaction)
-
-    @discord.ui.button(label="Social Media", emoji="🌐", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Social Media", style=discord.ButtonStyle.secondary)
     async def social(self, interaction, _):
-        await self.finish(interaction)
+        await self.disable(interaction)
+        await interaction.response.send_message(
+            "Thank you. Enjoy your time here.", ephemeral=True
+        )
 
-    @discord.ui.button(label="Other", emoji="✨", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Other", style=discord.ButtonStyle.success)
     async def other(self, interaction, _):
-        await self.finish(interaction)
+        await self.disable(interaction)
+        await interaction.response.send_message(
+            "Thank you. Enjoy your time here.", ephemeral=True
+        )
 
 # ======================================================
 # TICKET VIEW
 # ======================================================
 
 class TicketView(discord.ui.View):
-    def __init__(self, user):
-        super().__init__(timeout=60)
-        self.user = user
+    def __init__(self, user_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
 
-    @discord.ui.button(label="Open Support Ticket", emoji="🎟", style=discord.ButtonStyle.primary)
-    async def open_ticket(self, interaction, _):
-        allowed, reason = can_create_ticket(self.user.id)
-        if not allowed:
-            await interaction.response.send_message(reason, ephemeral=True)
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger)
+    async def close(self, interaction, _):
+        if not interaction.channel.name.startswith("ticket-"):
             return
 
-        guild = bot.guilds[0]
-        staff = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
-        category = discord.utils.get(guild.categories, name=SUPPORT_CATEGORY_NAME)
+        transcript = []
+        async for msg in interaction.channel.history(limit=None, oldest_first=True):
+            transcript.append(f"[{msg.created_at}] {msg.author}: {msg.content}")
 
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
-        if staff:
-            overwrites[staff] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        content = "\n".join(transcript)[:1900]
 
-        channel = await guild.create_text_channel(
-            f"ticket-{self.user.name.lower()}",
-            overwrites=overwrites,
-            category=category
-        )
-
-        OPEN_TICKETS.add(self.user.id)
-        TICKET_COOLDOWNS[self.user.id] = utcnow()
-
-        await channel.send(
-            embed=discord.Embed(
-                title="Support Ticket",
-                description=(
-                    f"{self.user.mention}\n\n"
-                    "This is a private support space.\n"
-                    "Staff will assist you here."
-                ),
-                color=0x020617
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE tickets SET open=0 WHERE user_id=?",
+                (self.user_id,)
             )
-        )
+            await db.commit()
 
-        if GIF_TICKET_CREATED:
-            await self.user.send(GIF_TICKET_CREATED)
+        await interaction.channel.send("Ticket closed.")
+        await asyncio.sleep(2)
+        await interaction.channel.delete()
 
-        if SUPPORT_LOG_CHANNEL_ID:
-            log = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
-            if log:
-                await log.send(
-                    f"🎟 Ticket opened by {self.user.mention} → {channel.mention}"
-                )
-
-        await interaction.response.send_message(
-            "Your ticket has been opened.",
-            ephemeral=True
-        )
+        if GIF_TICKET_CLOSED:
+            user = await bot.fetch_user(self.user_id)
+            await user.send(GIF_TICKET_CLOSED)
 
 # ======================================================
 # MEMBER JOIN
@@ -182,34 +159,41 @@ class TicketView(discord.ui.View):
 
 @bot.event
 async def on_member_join(member):
-    if WELCOME_CHANNEL_ID:
-        channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
-        if channel:
-            await channel.send(f"✨ {member.mention} joined the server")
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await db.execute_fetchone(
+            "SELECT welcome_channel, auto_role FROM guilds WHERE guild_id=?",
+            (member.guild.id,)
+        )
+
+    if row:
+        welcome_ch, auto_role = row
+        if welcome_ch:
+            channel = member.guild.get_channel(welcome_ch)
+            if channel:
+                await channel.send(f"✨ {member.mention} joined")
+
+        if auto_role:
+            role = member.guild.get_role(auto_role)
+            if role:
+                await member.add_roles(role)
 
     try:
-        await member.send(
-            f"👋 Welcome to **{member.guild.name}**!\n"
-            "If you need help, DM me `support`."
-        )
-        if GIF_WELCOME_DM:
-            await member.send(GIF_WELCOME_DM)
+        await member.send("Welcome. If you need help, type `support`.")
+        if GIF_WELCOME:
+            await member.send(GIF_WELCOME)
 
         embed = discord.Embed(
-            title="One quick question",
-            description="How did you find this server?",
-            color=0x020617
+            title="One question",
+            description="How did you find this server?"
         )
-        msg = await member.send(embed=embed, view=OnboardingView(member))
+        await member.send(embed=embed, view=OnboardingView())
         if GIF_ONBOARDING:
             await member.send(GIF_ONBOARDING)
-
-        ONBOARDING_MESSAGES[member.id] = msg.id
     except:
         pass
 
 # ======================================================
-# DM HANDLER
+# DM SUPPORT
 # ======================================================
 
 @bot.event
@@ -218,41 +202,40 @@ async def on_message(message):
         return
 
     if isinstance(message.channel, discord.DMChannel):
-        if message.author.id in ONBOARDING_MESSAGES:
-            try:
-                msg = await message.channel.fetch_message(
-                    ONBOARDING_MESSAGES.pop(message.author.id)
-                )
-                await msg.delete()
-            except:
-                pass
-            await message.channel.send("Thank you ✨")
-            return
-
         if message.content.lower() == "support":
             await message.channel.send(
-                "Support is handled through tickets.",
-                view=TicketView(message.author)
+                "Support is handled through private tickets.",
+                view=discord.ui.View().add_item(
+                    discord.ui.Button(
+                        label="Open Ticket",
+                        style=discord.ButtonStyle.primary,
+                        custom_id="open_ticket"
+                    )
+                )
             )
             if GIF_SUPPORT_PANEL:
                 await message.channel.send(GIF_SUPPORT_PANEL)
             return
 
-        if message.content.lower() == "personal":
-            if SUPPORT_LOG_CHANNEL_ID:
-                log = bot.guilds[0].get_channel(SUPPORT_LOG_CHANNEL_ID)
-                if log:
-                    await log.send(
-                        f"🧑‍💼 Personal assistance requested by {message.author.mention}"
-                    )
-            await message.author.send(
-                "A staff member will contact you within 24 hours."
-            )
-            if GIF_PERSONAL_ASSIST:
-                await message.author.send(GIF_PERSONAL_ASSIST)
-            return
-
     await bot.process_commands(message)
+
+# ======================================================
+# SLASH COMMANDS
+# ======================================================
+
+@bot.tree.command(name="support")
+async def slash_support(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "Please DM me `support` to open a ticket.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="help")
+async def slash_help(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "This is a private support bot.\nUse DM commands.",
+        ephemeral=True
+    )
 
 # ======================================================
 # ADMIN COMMANDS
@@ -260,34 +243,24 @@ async def on_message(message):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def welcome(ctx):
-    global WELCOME_CHANNEL_ID
-    WELCOME_CHANNEL_ID = ctx.channel.id
-    await ctx.send("✅ Welcome channel set.")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def supportlog(ctx):
-    global SUPPORT_LOG_CHANNEL_ID
-    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
-    await ctx.send("✅ Support log channel set.")
-
-@bot.command()
-async def help(ctx):
-    await ctx.send(
-        "**Commands**\n"
-        "`support` – DM bot to open ticket\n"
-        "`personal` – DM bot for private help\n"
-        "`!welcome` – set welcome channel\n"
-        "`!supportlog` – set support log channel"
-    )
+async def setup(ctx, welcome=None, log=None, category=None, staff=None, autorole=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "REPLACE INTO guilds VALUES (?,?,?,?,?,?)",
+            (
+                ctx.guild.id,
+                ctx.channel.id if welcome else None,
+                ctx.channel.id if log else None,
+                category.id if category else None,
+                staff.id if staff else None,
+                autorole.id if autorole else None
+            )
+        )
+        await db.commit()
+    await ctx.send("Setup complete.")
 
 # ======================================================
-# READY
+# RUN
 # ======================================================
-
-@bot.event
-async def on_ready():
-    print(f"✅ {bot.user} online")
 
 bot.run(TOKEN)
