@@ -92,6 +92,7 @@ class CloseTicketView(discord.ui.View):
         guild = interaction.guild
         staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
 
+        # 🔹 ONLY ADDITION: administrator permission
         if (
             interaction.user.id != self.owner_id
             and not interaction.user.guild_permissions.administrator
@@ -138,6 +139,7 @@ class SupportView(discord.ui.View):
             )
             return
 
+        # 🔹 ADDED: ticket ban check
         if self.user.id in TICKET_BANNED_USERS:
             await interaction.response.send_message(
                 embed=discord.Embed(
@@ -236,24 +238,10 @@ async def on_member_join(member):
             )
 
     try:
-        embed = discord.Embed(
-            title="🔥 Welcome to HellFire Hangout 🔥",
-            description=(
-                "We're thrilled to have you here!\n\n"
-                "**Make sure to check out these important places:**\n"
-                "• 💖 **Self Roles** – personalize your vibe\n"
-                "• 🎮 **Gaming Roles** – squad up & play\n"
-                "• 🎟 **Support Tickets** – need help? we got you\n\n"
-                "This is a chill hangout space for gaming, vibes, and conversations.\n"
-                "Respect everyone, enjoy the atmosphere, and have fun 🔥\n\n"
-                "**HellFire Hangout | DM me anytime for help**"
-            ),
-            color=0x7c2d12
+        await member.send(
+            f"Welcome to **{member.guild.name}**.\n"
+            "If you need help, DM me `support`."
         )
-        embed.set_footer(text="Type `support` anytime to contact staff")
-
-        await member.send(embed=embed)
-
         if GIF_WELCOME:
             await member.send(GIF_WELCOME)
 
