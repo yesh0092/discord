@@ -4,668 +4,459 @@ import datetime
 import io
 import json
 import random
+import logging
 from typing import Dict, Optional, Set
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
 from dotenv import load_dotenv
 
-# ================= ULTIMATE LUXURY SETUP =================
+# ================= SETUP LOGGING =================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ================= LOAD CONFIG =================
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    logger.error("TOKEN not found in .env file!")
+    raise ValueError("Bot token missing!")
 
+# ================= ENHANCED INTENTS =================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guild_reactions = True
 intents.guild_emojis_and_stickers = True
 
+# ================= BOT INITIALIZATION =================
 bot = commands.Bot(
     command_prefix="!",
     intents=intents,
     help_command=None,
-    case_insensitive=True
+    case_insensitive=True,
+    max_messages=None,
+    sync_commands_debug=True
 )
 
-# ================= PREMIUM CONFIGURATION =================
-STAFF_ROLE_NAME = "Staff"
-SUPPORT_CATEGORY_NAME = "SUPPORT"
-ADMIN_ROLE_NAME = "Admin"
-MOD_ROLE_NAME = "Moderator"
+# ================= CONFIGURATION =================
+CONFIG = {
+    "staff_roles": ["Staff", "Admin", "Moderator"],
+    "support_category": "SUPPORT",
+    "colors": [0xD4AF37, 0xB8860B, 0xFFD700, 0xFFA500],
+    "moon_icon": "https://cdn.discordapp.com/emojis/🌙.png",
+    "welcome_gif": "https://cdn.discordapp.com/attachments/1458877508886855925/1460863224630218752/GIF_20260114_103833_065.gif?ex=6974fca6&is=6973ab26&hm=40a9ac40e118a4542ed23528c5977ba9b8c0b1fae8d03d02ce9115342d7be875&"
+}
 
-GIF_WELCOME = "https://cdn.discordapp.com/attachments/1458877508886855925/1460863224630218752/GIF_20260114_103833_065.gif?ex=6974fca6&is=6973ab26&hm=40a9ac40e118a4542ed23528c5977ba9b8c0b1fae8d03d02ce9115342d7be875&"
-GIF_ONBOARDING = ""
-GIF_SUPPORT = ""
-MOON_ICON = "https://cdn.discordapp.com/emojis/🌙.png"
-GOLD_COLOR = 0xD4AF37
-NAVY_COLOR = 0x0C1445
-PREMIUM_COLORS = [0xD4AF37, 0xB8860B, 0xFFD700, 0xFFA500]
+# ================= STATE MANAGEMENT =================
+guild_data: Dict[int, Dict] = {}
+def get_guild_data(guild_id: int) -> Dict:
+    """Safe guild data access with auto-init"""
+    if guild_id not in guild_data:
+        guild_data[guild_id] = {
+            "welcome_channel": None,
+            "support_log": None,
+            "auto_role": None,
+            "reaction_roles_msg": None,
+            "panel_channel": None,
+            "onboarding": {},
+            "open_tickets": {},
+            "ticket_banned": set(),
+            "stats": {"tickets": 0, "members": 0}
+        }
+    return guild_data[guild_id]
 
-# ================= COMPREHENSIVE STATE MANAGEMENT =================
-MAIN_GUILD_ID = None
-WELCOME_CHANNEL_ID = None
-SUPPORT_LOG_CHANNEL_ID = None
-AUTO_ROLE_ID = None
-REACTION_ROLES_MSG_ID = None
-PANEL_CHANNEL_ID = None
-FAQ_CHANNEL_ID = None
+# ================= ENHANCED EMBED CLASS =================
+class SafeEmbed(discord.Embed):
+    """Crash-proof embed with validation"""
+    def __init__(self, title: str, description: str = "", color: int = 0xD4AF37):
+        try:
+            super().__init__(
+                title=f"🌙 {title[:256]}",
+                description=description[:4096] or "✨ Premium Service Active",
+                color=random.choice(CONFIG["colors"]) if color == 0xD4AF37 else color,
+                timestamp=datetime.datetime.utcnow()
+            )
+            self.set_footer(
+                text="Sawal Jawab Elite Assistant | Premier Support System",
+                icon_url=CONFIG["moon_icon"]
+            )
+            self.set_thumbnail(url=CONFIG["moon_icon"])
+        except Exception as e:
+            logger.error(f"Embed creation failed: {e}")
+            super().__init__(title="System Error", color=0xFF4444)
 
-ONBOARDING_MESSAGES: Dict[int, int] = {}
-OPEN_TICKETS: Dict[int, int] = {}
-TICKET_BANNED_USERS: Set[int] = set()
-TICKET_STATS: Dict[str, int] = {}
-REACTION_ROLES: Dict[str, int] = {}
-SERVER_STATS = {"total_members": 0, "tickets_created": 0}
+# ================= SAFE UTILITY FUNCTIONS =================
+async def safe_send(channel, **kwargs):
+    """Safely send message with error handling"""
+    try:
+        if 'embed' in kwargs and not isinstance(kwargs['embed'], discord.Embed):
+            kwargs['embed'] = SafeEmbed("Error", "Invalid embed format")
+        
+        if 'content' in kwargs:
+            kwargs['content'] = kwargs['content'][:2000]
+        
+        return await channel.send(**kwargs)
+    except discord.HTTPException as e:
+        logger.error(f"Failed to send message: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected send error: {e}")
+        return None
 
-# ================= ULTIMATE LUXURY EMBED SYSTEM =================
-class LuxuryEmbed(discord.Embed):
-    """Premium embed system with gold/navy theme and moon branding"""
-    def __init__(self, title: str, description: str = "", color: int = GOLD_COLOR):
-        super().__init__(
-            title=f"🌙 {title}",
-            description=description or "✨ Premium Service Active",
-            color=random.choice(PREMIUM_COLORS) if color == GOLD_COLOR else color,
-            timestamp=datetime.datetime.utcnow()
-        )
-        self.set_footer(
-            text="Sawal Jawab Elite Assistant | Premier Support System", 
-            icon_url=MOON_ICON
-        )
-        self.set_thumbnail(url=MOON_ICON)
+def is_authorized_member(member: discord.Member, guild_id: int) -> bool:
+    """Enhanced permission check"""
+    if not member or not member.guild:
+        return False
+    
+    guild_data_guild = get_guild_data(guild_id)
+    if member.guild_permissions.administrator:
+        return True
+    
+    member_roles = [role.name for role in member.roles]
+    return any(role in CONFIG["staff_roles"] for role in member_roles)
 
-# ================= ADVANCED HELPER FUNCTIONS =================
-def get_guild() -> Optional[discord.Guild]:
-    """Get main guild with error handling"""
-    return bot.get_guild(MAIN_GUILD_ID) if MAIN_GUILD_ID else None
-
-def is_staff_or_admin(member: discord.Member) -> bool:
-    """Check if user has staff/admin permissions"""
-    staff_role = discord.utils.get(member.guild.roles, name=STAFF_ROLE_NAME)
-    admin_role = discord.utils.get(member.guild.roles, name=ADMIN_ROLE_NAME)
-    mod_role = discord.utils.get(member.guild.roles, name=MOD_ROLE_NAME)
-    return (member.guild_permissions.administrator or 
-            staff_role in member.roles or 
-            admin_role in member.roles or 
-            mod_role in member.roles)
-
-async def send_transcript(channel: discord.TextChannel):
-    """Generate comprehensive ticket transcript"""
+# ================= ENHANCED TRANSCRIPT SYSTEM =================
+async def create_transcript(channel: discord.TextChannel, max_messages: int = 1000) -> Optional[discord.File]:
+    """Safe transcript generation with limits"""
     try:
         log = io.StringIO()
-        log.write(f"🕰️  Transcript for #{channel.name} - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+        log.write(f"🕰️ Transcript for #{channel.name} - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
         log.write("=" * 80 + "\n\n")
         
-        async for msg in channel.history(limit=None, oldest_first=True):
+        message_count = 0
+        async for msg in channel.history(limit=max_messages, oldest_first=True):
+            if message_count >= max_messages:
+                log.write(f"[... {channel.history(limit=None).count() - max_messages} more messages ...]\n")
+                break
+                
+            content = msg.content or '[Attachment/Media]'
             log.write(f"[{msg.created_at.strftime('%Y-%m-%d %H:%M:%S')}] ")
             log.write(f"{msg.author.display_name} ({msg.author.id}): ")
-            log.write(f"{msg.content or '[Attachment/Media]'}\n")
+            log.write(f"{content[:1000]}\n")
+            message_count += 1
         
         transcript_bytes = io.BytesIO(log.getvalue().encode('utf-8'))
-        file = discord.File(transcript_bytes, f"elite-transcript-{channel.name}-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}.txt")
-        
-        guild = channel.guild
-        if SUPPORT_LOG_CHANNEL_ID:
-            log_ch = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
-            if log_ch:
-                embed = LuxuryEmbed("📄 Elite Transcript", f"Generated from closed #{channel.name}")
-                await log_ch.send(embed=embed, file=file)
+        return discord.File(transcript_bytes, f"transcript-{channel.name}-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}.txt")
     except Exception as e:
-        print(f"Transcript error: {e}")
+        logger.error(f"Transcript error: {e}")
+        return None
 
-# ================= ENHANCED ONBOARDING SYSTEM =================
-class OnboardingView(discord.ui.View):
-    def __init__(self, user: discord.User):
-        super().__init__(timeout=600)  # Extended timeout
+# ================= ONBOARDING SYSTEM =================
+class OnboardingView(ui.View):
+    def __init__(self, user: discord.User, guild_id: int):
+        super().__init__(timeout=1800)  # 30 minutes
         self.user = user
+        self.guild_id = guild_id
 
-    async def finish_onboarding(self, interaction: discord.Interaction):
-        """Complete onboarding with cleanup"""
-        msg_id = ONBOARDING_MESSAGES.pop(self.user.id, None)
-        if msg_id:
-            try:
-                msg = await interaction.channel.fetch_message(msg_id)
-                await msg.delete()
-            except:
-                pass
-        
-        embed = LuxuryEmbed("✨ Elite Access Granted", 
-                           "Welcome to the premium realm. Your journey begins now.\n\n"
-                           "💎 **Elite Services Available:**\n"
-                           "• DM `support` for premium assistance\n"
-                           "• React for roles in designated channels\n"
-                           "• Use /elite_panel for full services")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    async def complete_onboarding(self, interaction: discord.Interaction):
+        """Safely complete onboarding"""
+        try:
+            guild_data_guild = get_guild_data(self.guild_id)
+            guild_data_guild["onboarding"].pop(self.user.id, None)
+            
+            embed = SafeEmbed("✨ Access Granted", 
+                            "Welcome to premium services!\n\n"
+                            "💎 DM `support` for assistance\n"
+                            "⭐ React for roles\n"
+                            "🎫 Use /elite_panel")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Onboarding completion error: {e}")
 
-    @discord.ui.button(label="👥 Friends", style=discord.ButtonStyle.primary, emoji="⭐")
-    async def friends(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+    @ui.button(label="👥 Friends", style=discord.ButtonStyle.primary)
+    async def friends(self, interaction: discord.Interaction, button: ui.Button):
+        await self.complete_onboarding(interaction)
 
-    @discord.ui.button(label="📱 Social Media", style=discord.ButtonStyle.secondary, emoji="💎")
-    async def social(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+    @ui.button(label="📱 Social", style=discord.ButtonStyle.secondary)
+    async def social(self, interaction: discord.Interaction, button: ui.Button):
+        await self.complete_onboarding(interaction)
 
-    @discord.ui.button(label="🔮 Other", style=discord.ButtonStyle.success, emoji="🌙")
-    async def other(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.finish_onboarding(interaction)
+    @ui.button(label="🔮 Other", style=discord.ButtonStyle.success)
+    async def other(self, interaction: discord.Interaction, button: ui.Button):
+        await self.complete_onboarding(interaction)
 
-# ================= PREMIUM TICKET MANAGEMENT =================
-class CloseTicketView(discord.ui.View):
-    def __init__(self, owner_id: int):
-        super().__init__(timeout=None)  # Persistent
-        self.owner_id = owner_id
-
-    @discord.ui.button(label="🔒 Close Elite Ticket", emoji="👑", style=discord.ButtonStyle.danger)
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
-        
-        # Enhanced permission check
-        if (interaction.user.id != self.owner_id and 
-            not interaction.user.guild_permissions.administrator and
-            (not staff_role or staff_role not in interaction.user.roles)):
-            embed = LuxuryEmbed("❌ Access Denied", 
-                               "Only ticket owner or staff can close this ticket.", 
-                               0xFF4444)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # Disable button and show closing status
-        button.disabled = True
-        await interaction.message.edit(view=self)
-        
-        embed = LuxuryEmbed("🔒 Ticket Sealed", 
-                           "Generating premium transcript...\n"
-                           "This channel will be archived in 5 seconds.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        # Remove from active tickets
-        OPEN_TICKETS.pop(self.owner_id, None)
-        
-        # Generate and send transcript
-        await send_transcript(interaction.channel)
-        
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
-
-# ================= ADVANCED TICKET SELECTION =================
-class TicketSelectView(discord.ui.View):
-    """Premium ticket type selector"""
-    def __init__(self, user: discord.User):
-        super().__init__(timeout=600)
-        self.user = user
-
-    @discord.ui.select(
-        placeholder="🎫 Select Elite Ticket Type...",
-        options=[
-            discord.SelectOption(label="❓ General Help", emoji="⭐", description="Account, rules, general questions"),
-            discord.SelectOption(label="💳 Billing", emoji="💎", description="Payments, subscriptions, refunds"),
-            discord.SelectOption(label="🔧 Technical", emoji="⚙️", description="Bugs, errors, technical issues"),
-            discord.SelectOption(label="🚨 Report", emoji="👮", description="User reports, violations"),
-            discord.SelectOption(label="📱 Mobile", emoji="📱", description="App-specific issues")
-        ],
-        max_values=1
-    )
-    async def ticket_type_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        ticket_type = select.values[0]
-        await interaction.response.send_modal(TicketDetailModal(self.user, ticket_type))
-
-class TicketDetailModal(ui.Modal, title="📝 Elite Ticket Details"):
-    def __init__(self, user: discord.User, ticket_type: str):
+# ================= TICKET SYSTEM =================
+class TicketModal(ui.Modal, title="Ticket Details"):
+    def __init__(self, user: discord.User, ticket_type: str, guild_id: int):
         super().__init__(title=f"🌙 {ticket_type} Ticket")
         self.user = user
         self.ticket_type = ticket_type
+        self.guild_id = guild_id
         self.description = ui.TextInput(
-            label="Detailed Issue Description",
+            label="Issue Description",
             style=discord.TextStyle.paragraph,
-            placeholder="Please provide full details of your issue...",
+            placeholder="Describe your issue in detail...",
             max_length=2000,
             required=True
         )
         self.add_item(self.description)
 
     async def on_submit(self, interaction: discord.Interaction):
-        guild = get_guild()
-        if not guild:
-            embed = LuxuryEmbed("⚠️ Configuration Error", 
-                               "Support system not configured. Contact admin.", 
-                               0xFFAA00)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        await self.create_ticket_channel(interaction)
 
-        # Comprehensive checks
-        if self.user.id in TICKET_BANNED_USERS:
-            embed = LuxuryEmbed("🚫 Access Denied", 
-                               "You are restricted from creating tickets.", 
-                               0xFF4444)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+    async def create_ticket_channel(self, interaction: discord.Interaction):
+        """Crash-safe ticket creation"""
+        try:
+            guild = interaction.guild
+            if not guild:
+                await interaction.response.send_message("❌ Guild not found", ephemeral=True)
+                return
 
-        if self.user.id in OPEN_TICKETS:
-            active_channel = guild.get_channel(OPEN_TICKETS[self.user.id])
-            embed = LuxuryEmbed("⏳ Active Ticket", 
-                               f"You already have #{active_channel.name}", 
-                               0xFFAA00)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            guild_data_guild = get_guild_data(self.guild_id)
+            
+            # Safety checks
+            if self.user.id in guild_data_guild["ticket_banned"]:
+                embed = SafeEmbed("🚫 Banned", "Ticket creation restricted", 0xFF4444)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
 
-        # Create premium ticket channel
-        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
-        category = discord.utils.get(guild.categories, name=SUPPORT_CATEGORY_NAME)
-        
-        if not category:
-            embed = LuxuryEmbed("⚠️ Setup Required", 
-                               f"Please create '{SUPPORT_CATEGORY_NAME}' category.", 
-                               0xFFAA00)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            if self.user.id in guild_data_guild["open_tickets"]:
+                channel = guild.get_channel(guild_data_guild["open_tickets"][self.user.id])
+                embed = SafeEmbed("⏳ Active Ticket", f"You have #{channel.name}", 0xFFAA00)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
 
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
-            staff_role: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True) if staff_role else None
-        }
+            # Create channel safely
+            category = discord.utils.get(guild.categories, name=CONFIG["support_category"])
+            if not category:
+                embed = SafeEmbed("⚠️ Setup Required", f"Create '{CONFIG['support_category']}' category", 0xFFAA00)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
 
-        # Create uniquely named channel
-        channel_name = f"elite-{self.ticket_type.lower().replace(' ', '-')}-{self.user.name[:8]}"
-        channel = await guild.create_text_channel(channel_name, overwrites=overwrites, category=category)
-        OPEN_TICKETS[self.user.id] = channel.id
-        
-        # Track statistics
-        TICKET_STATS[self.ticket_type] = TICKET_STATS.get(self.ticket_type, 0) + 1
-        SERVER_STATS["tickets_created"] += 1
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            }
+            
+            # Add staff role permissions
+            for role_name in CONFIG["staff_roles"]:
+                role = discord.utils.get(guild.roles, name=role_name)
+                if role:
+                    overwrites[role] = discord.PermissionOverwrite(
+                        read_messages=True, send_messages=True, manage_messages=True
+                    )
 
-        # Send premium welcome message
-        welcome_embed = LuxuryEmbed(
-            f"🎟 {self.ticket_type} Support Ticket",
-            f"**Elite User:** {self.user.mention} ({self.user.id})\n"
-            f"**Issue:** {self.description.value[:500]}{'...' if len(self.description.value) > 500 else ''}\n\n"
-            f"🌟 **Premium staff will assist you shortly.**\n"
-            f"📊 **Status:** Waiting for elite response",
-            NAVY_COLOR
-        )
-        welcome_embed.add_field(name="Ticket ID", value=str(channel.id)[-6:], inline=True)
-        welcome_embed.add_field(name="Type", value=self.ticket_type, inline=True)
-        
-        await channel.send(embed=welcome_embed, view=CloseTicketView(self.user.id))
+            channel_name = f"ticket-{self.ticket_type[:10]}-{self.user.name[:8]}"
+            channel = await guild.create_text_channel(channel_name, overwrites=overwrites, category=category)
+            
+            # Track ticket
+            guild_data_guild["open_tickets"][self.user.id] = channel.id
+            guild_data_guild["stats"]["tickets"] += 1
 
-        # Log to support channel
-        if SUPPORT_LOG_CHANNEL_ID:
-            log_channel = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
-            if log_channel:
-                log_embed = LuxuryEmbed(
-                    "📊 Elite Ticket Log", 
-                    f"**{self.user}** opened **{self.ticket_type}** ticket\n"
-                    f"**Channel:** {channel.mention}\n"
-                    f"**ID:** {channel.id}",
-                    0xB8860B
-                )
-                await log_channel.send(embed=log_embed)
+            # Send ticket message
+            embed = SafeEmbed(
+                f"🎫 {self.ticket_type} Ticket",
+                f"**User:** {self.user.mention}\n**Issue:** {self.description.value[:500]}"
+            )
+            view = CloseTicketView(self.user.id, self.guild_id)
+            await channel.send(embed=embed, view=view)
 
-        embed = LuxuryEmbed("✅ Elite Ticket Created", 
-                           f"Your premium support channel: **{channel.mention}**\n"
-                           f"Staff assigned - elite response guaranteed.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = SafeEmbed("✅ Ticket Created", f"Support: {channel.mention}")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ================= COMPREHENSIVE SUPPORT HUB =================
-class SupportView(discord.ui.View):
-    def __init__(self, user: discord.User):
-        super().__init__(timeout=1800)  # 30 minutes
-        self.user = user
+        except Exception as e:
+            logger.error(f"Ticket creation error: {e}")
+            embed = SafeEmbed("❌ Error", "Ticket creation failed. Try again.", 0xFF4444)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="🎟 Create Elite Ticket", style=discord.ButtonStyle.primary, emoji="🌙")
-    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = LuxuryEmbed("📋 Ticket Categories", 
-                           "Please select the appropriate category for your issue:")
-        await interaction.response.send_message(embed=embed, view=TicketSelectView(self.user), ephemeral=True)
-
-    @discord.ui.button(label="🧑‍💼 Private Elite Assist", style=discord.ButtonStyle.secondary, emoji="💎")
-    async def private_assist(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = get_guild()
-        if SUPPORT_LOG_CHANNEL_ID and guild:
-            log_channel = guild.get_channel(SUPPORT_LOG_CHANNEL_ID)
-            if log_channel:
-                embed = LuxuryEmbed("💎 Elite Private Request", 
-                                   f"{self.user.mention} ({self.user.id}) requested private assistance.\n"
-                                   f"**Priority:** High - 24h response guaranteed")
-                await log_channel.send(embed=embed)
-        
-        embed = LuxuryEmbed("💎 Elite Request Received", 
-                           "Your private assistance request has been logged.\n"
-                           "An elite staff member will contact you within **24 hours**.\n"
-                           "⏰ **Reference ID:** PRIV-{self.user.id}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="📊 My Tickets", style=discord.ButtonStyle.success, emoji="📋")
-    async def my_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = get_guild()
-        if self.user.id in OPEN_TICKETS and guild:
-            channel = guild.get_channel(OPEN_TICKETS[self.user.id])
-            if channel:
-                embed = LuxuryEmbed("📊 Active Ticket", f"You have an active ticket: **{channel.mention}**")
-                return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        embed = LuxuryEmbed("📋 No Active Tickets", "Create a new elite ticket using the button above.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# ================= ULTIMATE ELITE PANEL =================
-class ElitePanelView(discord.ui.View):
-    """Persistent premium support panel"""
-    def __init__(self):
+class CloseTicketView(ui.View):
+    def __init__(self, owner_id: int, guild_id: int):
         super().__init__(timeout=None)
+        self.owner_id = owner_id
+        self.guild_id = guild_id
 
-    @discord.ui.button(label="🎟 Elite Tickets", style=discord.ButtonStyle.primary, emoji="🌙")
-    async def tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = LuxuryEmbed("💎 Premium Support Hub", "Access elite ticket services")
-        await interaction.response.send_message(embed=embed, view=SupportView(interaction.user), ephemeral=True)
+    @ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.danger)
+    async def close(self, interaction: discord.Interaction, button: ui.Button):
+        if not is_authorized_member(interaction.user, self.guild_id) and interaction.user.id != self.owner_id:
+            embed = SafeEmbed("❌ Unauthorized", "Only owner/staff can close", 0xFF4444)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
 
-    @discord.ui.button(label="❓ Elite FAQ", style=discord.ButtonStyle.secondary, emoji="📜")
-    async def faq(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = LuxuryEmbed("❓ Elite FAQ",
-                           "**Q: How do I get roles?**\n"
-                           "A: Use `!reactionroles #channel` or react in #roles\n\n"
-                           "**Q: Support wait time?**\n"
-                           "A: Elite response within 1 hour\n\n"
-                           "**Q: Ticket banned?**\n"
-                           "A: Contact admin for appeal")
+        # Disable button
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        # Generate transcript
+        transcript = await create_transcript(interaction.channel)
+        
+        # Log and delete
+        guild_data_guild = get_guild_data(self.guild_id)
+        guild_data_guild["open_tickets"].pop(self.owner_id, None)
+        
+        if transcript and guild_data_guild["support_log"]:
+            log_channel = interaction.guild.get_channel(guild_data_guild["support_log"])
+            if log_channel:
+                await safe_send(log_channel, embed=SafeEmbed("📄 Transcript", f"Closed #{interaction.channel.name}"), file=transcript)
+        
+        await asyncio.sleep(3)
+        await interaction.channel.delete()
+
+class TicketSelectView(ui.View):
+    def __init__(self, user: discord.User, guild_id: int):
+        super().__init__(timeout=600)
+        self.user = user
+        self.guild_id = guild_id
+
+    @ui.select(
+        placeholder="Select ticket type...",
+        options=[
+            discord.SelectOption(label="General Help", emoji="❓"),
+            discord.SelectOption(label="Billing", emoji="💳"),
+            discord.SelectOption(label="Technical", emoji="🔧"),
+            discord.SelectOption(label="Report", emoji="🚨"),
+            discord.SelectOption(label="Mobile", emoji="📱")
+        ]
+    )
+    async def select_ticket(self, interaction: discord.Interaction, select: ui.Select):
+        await interaction.response.send_modal(TicketModal(self.user, select.values[0], self.guild_id))
+
+# ================= MAIN SUPPORT PANEL =================
+class SupportPanel(ui.View):
+    def __init__(self, user: discord.User, guild_id: int):
+        super().__init__(timeout=1800)
+        self.user = user
+        self.guild_id = guild_id
+
+    @ui.button(label="🎫 Create Ticket", style=discord.ButtonStyle.primary)
+    async def create_ticket(self, interaction: discord.Interaction, button: ui.Button):
+        embed = SafeEmbed("📋 Ticket Types", "Select your issue category:")
+        await interaction.response.send_message(embed=embed, view=TicketSelectView(self.user, self.guild_id), ephemeral=True)
+
+    @ui.button(label="📊 My Tickets", style=discord.ButtonStyle.secondary)
+    async def my_tickets(self, interaction: discord.Interaction, button: ui.Button):
+        guild_data_guild = get_guild_data(self.guild_id)
+        if self.user.id in guild_data_guild["open_tickets"]:
+            channel = interaction.guild.get_channel(guild_data_guild["open_tickets"][self.user.id])
+            embed = SafeEmbed("📊 Active", f"Your ticket: {channel.mention}")
+        else:
+            embed = SafeEmbed("📋 No Tickets", "Create a new ticket above")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="📊 Server Stats", style=discord.ButtonStyle.success, emoji="📈")
-    async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        embed = LuxuryEmbed("📊 Elite Server Statistics",
-                           f"**Members:** {guild.member_count}\n"
-                           f"**Tickets Today:** {SERVER_STATS['tickets_created']}\n"
-                           f"**Active Tickets:** {len(OPEN_TICKETS)}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+# ================= SLASH COMMANDS =================
+@bot.tree.command(name="setup", description="🔧 Complete bot setup")
+@app_commands.describe(channel="Set welcome/log channel")
+async def setup(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only", ephemeral=True)
+        return
 
-# ================= COMPREHENSIVE EVENT HANDLERS =================
+    guild_data_guild = get_guild_data(interaction.guild.id)
+    target_channel = channel or interaction.channel
+    
+    guild_data_guild["welcome_channel"] = target_channel.id
+    guild_data_guild["support_log"] = target_channel.id
+    
+    embed = SafeEmbed("✅ Setup Complete", 
+                     f"Welcome: {target_channel.mention}\n"
+                     f"Logs: {target_channel.mention}\n\n"
+                     f"Next: `/panel` | `!autorole @role`")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="panel", description="🎫 Deploy support panel")
+async def panel(interaction: discord.Interaction):
+    embed = SafeEmbed("🌙 Support Hub", 
+                     "Click buttons for premium support services")
+    embed.set_image(url=CONFIG["welcome_gif"])
+    view = SupportPanel(interaction.user, interaction.guild.id)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+@bot.tree.command(name="stats", description="📊 Server stats")
+async def stats(interaction: discord.Interaction):
+    guild_data_guild = get_guild_data(interaction.guild.id)
+    embed = SafeEmbed("📊 Statistics",
+                     f"Members: {len(interaction.guild.members):,}\n"
+                     f"Tickets: {guild_data_guild['stats']['tickets']}\n"
+                     f"Active: {len(guild_data_guild['open_tickets'])}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ================= EVENTS =================
+@bot.event
+async def on_ready():
+    logger.info(f"✅ {bot.user} - ELITE MODE ACTIVE")
+    logger.info(f"📊 Guilds: {len(bot.guilds)}")
+    
+    # Sync slash commands for main guild
+    for guild in bot.guilds[:3]:  # Limit sync
+        try:
+            synced = await bot.tree.sync(guild=guild)
+            logger.info(f"✅ Synced {len(synced)} commands to {guild.name}")
+        except Exception as e:
+            logger.error(f"Sync failed for {guild.name}: {e}")
+
 @bot.event
 async def on_member_join(member: discord.Member):
-    """Enhanced member join with full automation"""
-    guild = member.guild
-    
-    # Auto role assignment
-    if AUTO_ROLE_ID:
-        role = guild.get_role(AUTO_ROLE_ID)
-        if role:
-            await member.add_roles(role)
-
-    # Server welcome
-    if WELCOME_CHANNEL_ID:
-        welcome_ch = guild.get_channel(WELCOME_CHANNEL_ID)
-        if welcome_ch:
-            embed = LuxuryEmbed("✨ Elite Member Arrival", 
-                               f"{member.mention} has entered the realm.\n"
-                               f"**Total Members:** {len(guild.members)}")
-            await welcome_ch.send(embed=embed)
-
-    # Premium DM welcome sequence
+    """Safe welcome system"""
     try:
-        welcome_text = f"🌙 **Welcome to {guild.name} Elite Realm**\n\n"
-        welcome_text += "You have been granted **premium access**.\n"
-        welcome_text += "DM `support` for **elite assistance** anytime.\n\n"
-        welcome_text += "✨ Your elite journey begins now..."
+        guild_data_guild = get_guild_data(member.guild.id)
         
-        await member.send(welcome_text)
-        
-        if GIF_WELCOME:
-            await member.send(GIF_WELCOME)
-        
-        # Onboarding question
-        embed = LuxuryEmbed("🔮 Elite Discovery", 
-                           "How did you find our premium server?\n"
-                           "(Helps us improve)")
-        msg = await member.send(embed=embed, view=OnboardingView(member))
-        ONBOARDING_MESSAGES[member.id] = msg.id
-        
-        if GIF_ONBOARDING:
-            await member.send(GIF_ONBOARDING)
-            
-        SERVER_STATS["total_members"] += 1
-            
-    except discord.Forbidden:
-        pass  # User has DMs disabled
-
-@bot.event
-async def on_raw_reaction_add(payload):
-    """Advanced reaction role system"""
-    if payload.message_id == REACTION_ROLES_MSG_ID:
-        guild = bot.get_guild(payload.guild_id)
-        if not guild:
-            return
-            
-        member = guild.get_member(payload.user_id)
-        if member and not member.bot:
-            # Dynamic role matching
-            role_name = f"Role-{str(payload.emoji)}"
-            role = discord.utils.get(guild.roles, name=role_name)
+        # Auto role
+        if guild_data_guild["auto_role"]:
+            role = member.guild.get_role(guild_data_guild["auto_role"])
             if role:
                 await member.add_roles(role)
-                print(f"Assigned {role.name} to {member}")
+
+        # Welcome channel
+        if guild_data_guild["welcome_channel"]:
+            channel = member.guild.get_channel(guild_data_guild["welcome_channel"])
+            if channel:
+                embed = SafeEmbed("✨ Welcome", f"{member.mention} joined!")
+                await safe_send(channel, embed=embed)
+
+        # DM welcome
+        try:
+            embed = SafeEmbed("🔮 Welcome", "DM `support` for help")
+            view = SupportPanel(member, member.guild.id)
+            await member.send(embed=embed, view=view)
+        except discord.Forbidden:
+            logger.info(f"DMs disabled for {member}")
+            
+    except Exception as e:
+        logger.error(f"Join event error: {e}")
 
 @bot.event
 async def on_message(message: discord.Message):
-    """Enhanced message handler"""
     if message.author.bot:
         return
 
-    # Premium DM handling
+    # DM Support trigger
     if isinstance(message.channel, discord.DMChannel):
-        user_id = message.author.id
-        
-        # Handle onboarding completion
-        if user_id in ONBOARDING_MESSAGES:
-            try:
-                onboarding_msg = await message.channel.fetch_message(ONBOARDING_MESSAGES.pop(user_id))
-                await onboarding_msg.delete()
-            except:
-                pass
-            
-            embed = LuxuryEmbed("✅ Onboarding Complete", 
-                               "Thank you for verifying! ✨\nEnjoy elite access.")
-            await message.channel.send(embed=embed)
-            return
-
-        # Elite support trigger
         if message.content.lower() in ["support", "help", "ticket"]:
-            embed = LuxuryEmbed("💎 Elite Support Services", 
-                               "Choose your premium assistance option:")
-            await message.channel.send(embed=embed, view=SupportView(message.author))
-            if GIF_SUPPORT:
-                await message.channel.send(GIF_SUPPORT)
-            return
+            embed = SafeEmbed("💎 Support", "Choose your service:")
+            view = SupportPanel(message.author, 0)  # DM mode
+            await safe_send(message.channel, embed=embed, view=view)
 
     await bot.process_commands(message)
 
-# ================= ULTIMATE SLASH COMMAND TREE =================
-@bot.tree.command(name="elite_panel", description="🌙 Deploy persistent elite support hub")
-@app_commands.describe(channel="Channel for the panel (optional)")
-async def elite_panel(interaction: discord.Interaction, channel: discord.TextChannel = None):
-    """Deploy premium persistent support panel"""
-    target_channel = channel or interaction.channel
-    embed = LuxuryEmbed("🌙 Elite Support Hub", 
-                       "Welcome to premium services.\n"
-                       "**Click buttons below for elite assistance.**\n\n"
-                       "🎟 Tickets | ❓ FAQ | 📊 Stats")
-    embed.set_image(url=GIF_WELCOME)
-    
-    view = ElitePanelView()
-    await target_channel.send(embed=embed, view=view)
-    
-    success_embed = LuxuryEmbed("✅ Elite Panel Deployed", 
-                               f"Premium hub active in {target_channel.mention}")
-    await interaction.response.send_message(embed=success_embed, ephemeral=True)
-
-@bot.tree.command(name="elite_stats", description="📊 View comprehensive server statistics")
-async def elite_stats(interaction: discord.Interaction):
-    """Display elite server statistics"""
-    guild = interaction.guild
-    embed = LuxuryEmbed("📊 Elite Server Statistics",
-                       f"**Total Members:** {guild.member_count:,}\n"
-                       f"**Active Tickets:** {len(OPEN_TICKETS)}\n"
-                       f"**Tickets Created:** {SERVER_STATS['tickets_created']:,}\n"
-                       f"**Banned Users:** {len(TICKET_BANNED_USERS)}")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="elite_faq", description="❓ Access elite FAQ")
-async def elite_faq(interaction: discord.Interaction):
-    """Quick access to premium FAQ"""
-    embed = LuxuryEmbed("❓ Elite FAQ",
-                       "**Common Questions:**\n"
-                       "• **Roles:** `!reactionroles #roles`\n"
-                       "• **Support:** `/elite_panel`\n"
-                       "• **Tickets:** Click Tickets button\n"
-                       "• **DM Bot:** `support`")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# ================= COMPLETE ADMIN COMMAND SET =================
-@bot.command(name="setup")
+# ================= PREFIX COMMANDS =================
+@bot.command()
 @commands.has_permissions(administrator=True)
-async def complete_setup(ctx: commands.Context):
-    """One-command elite setup"""
-    global MAIN_GUILD_ID, WELCOME_CHANNEL_ID, SUPPORT_LOG_CHANNEL_ID
-    
-    MAIN_GUILD_ID = ctx.guild.id
-    WELCOME_CHANNEL_ID = ctx.channel.id
-    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
-    
-    embed = LuxuryEmbed("✅ Elite Setup Complete",
-                       f"**All systems configured:**\n"
-                       f"• Guild: {ctx.guild.name}\n"
-                       f"• Welcome: {ctx.channel.mention}\n"
-                       f"• Logs: {ctx.channel.mention}\n\n"
-                       f"**Next steps:**\n"
-                       "1. `!autorole @Member`\n"
-                       "2. Create SUPPORT category\n"
-                       "3. `/elite_panel`")
-    await ctx.send(embed=embed)
+async def autorole(ctx: commands.Context, *, role: discord.Role):
+    get_guild_data(ctx.guild.id)["auto_role"] = role.id
+    await safe_send(ctx, embed=SafeEmbed("✅ Auto Role", f"{role.mention}"))
 
 @bot.command()
 async def help(ctx: commands.Context):
-    """Enhanced help with all commands"""
-    embed = LuxuryEmbed("📜 Elite Command Center",
-                       "**User Commands:**\n"
-                       "`support` (DM) | `/elite_panel` | `/elite_faq`\n\n"
-                       "**Admin Commands:**\n"
-                       "`!setup` | `!welcome` | `!supportlog` | `!autorole`\n"
-                       "`!ticketban` | `!bulkclose` | `!reactionroles`\n\n"
-                       "**Status:** Premium Active")
-    embed.set_thumbnail(url=MOON_ICON)
-    await ctx.send(embed=embed)
+    embed = SafeEmbed("📜 Commands",
+                     "**Slash:** `/setup /panel /stats`\n"
+                     "**Prefix:** `!autorole !help`\n"
+                     "**DM:** `support`")
+    await safe_send(ctx, embed=embed)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def welcome(ctx: commands.Context):
-    global WELCOME_CHANNEL_ID, MAIN_GUILD_ID
-    WELCOME_CHANNEL_ID = ctx.channel.id
-    MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=LuxuryEmbed("✅ Welcome Channel Set", f"{ctx.channel.mention}"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def supportlog(ctx: commands.Context):
-    global SUPPORT_LOG_CHANNEL_ID, MAIN_GUILD_ID
-    SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
-    MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=LuxuryEmbed("✅ Support Log Set", f"{ctx.channel.mention}"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def autorole(ctx: commands.Context, role: discord.Role):
-    global AUTO_ROLE_ID, MAIN_GUILD_ID
-    AUTO_ROLE_ID = role.id
-    MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=LuxuryEmbed("✅ Auto Role Set", f"{role.mention}"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def reactionroles(ctx: commands.Context, channel: discord.TextChannel):
-    """Setup reaction role message"""
-    global REACTION_ROLES_MSG_ID
-    embed = LuxuryEmbed("👑 Elite Reaction Roles",
-                       "React below to get premium roles:\n\n"
-                       "😀 **Fun Role**\n"
-                       "🔥 **Gamer Role**\n"
-                       "⭐ **Elite Role**\n"
-                       "💎 **VIP Role**")
-    
-    msg = await channel.send(embed=embed)
-    await msg.add_reaction("😀")
-    await msg.add_reaction("🔥")
-    await msg.add_reaction("⭐")
-    await msg.add_reaction("💎")
-    
-    REACTION_ROLES_MSG_ID = msg.id
-    await ctx.send(embed=LuxuryEmbed("✅ Reaction Roles Active", f"{channel.mention}"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def bulkclose(ctx: commands.Context):
-    """Close all open tickets"""
-    guild = get_guild()
-    if not guild:
-        return await ctx.send(embed=LuxuryEmbed("❌ Error", "Guild not configured", 0xFF4444))
-    
-    closed_count = 0
-    for user_id, channel_id in list(OPEN_TICKETS.items()):
-        channel = guild.get_channel(channel_id)
-        if channel:
-            await channel.delete()
-            closed_count += 1
-    
-    OPEN_TICKETS.clear()
-    await ctx.send(embed=LuxuryEmbed("🧹 Bulk Close Complete", f"{closed_count} elite tickets sealed"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def ticketban(ctx: commands.Context, user: discord.Member):
-    TICKET_BANNED_USERS.add(user.id)
-    await ctx.send(embed=LuxuryEmbed("🚫 Ticket Banned", f"{user.mention} restricted", 0xFF4444))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def ticketunban(ctx: commands.Context, user: discord.Member):
-    TICKET_BANNED_USERS.discard(user.id)
-    await ctx.send(embed=LuxuryEmbed("✅ Ticket Unbanned", f"{user.mention} restored"))
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def announce(ctx: commands.Context, *, message: str):
-    """Enhanced announcement system"""
-    guild = ctx.guild
-    embed = LuxuryEmbed("📢 Elite Server Announcement", message)
-    embed.set_thumbnail(url=guild.icon.url if guild.icon else MOON_ICON)
-    
-    sent = 0
-    failed = 0
-    
-    for member in guild.members:
-        if not member.bot and not member.guild_permissions.administrator:
-            try:
-                await member.send(embed=embed)
-                sent += 1
-                await asyncio.sleep(1)  # Rate limit protection
-            except:
-                failed += 1
-    
-    stats_embed = LuxuryEmbed("📤 Announcement Complete",
-                             f"**Delivered:** {sent}\n**Failed:** {failed}\n"
-                             f"**Success Rate:** {(sent/(sent+failed)*100):.1f}%")
-    await ctx.send(embed=stats_embed)
-
-# ================= PREMIUM READY EVENT =================
-@bot.event
-async def on_ready():
-    print("🌙" + "="*50)
-    print(f"✅ {bot.user} - ELITE MODE ACTIVATED")
-    print(f"🌟 Premium Features: Slash Commands, Luxury Embeds, Auto-Transcripts")
-    print(f"📊 Guilds: {len(bot.guilds)} | Users: {sum(g.member_count for g in bot.guilds)}")
-    print("="*50)
-    
-    if MAIN_GUILD_ID:
-        guild = discord.Object(id=MAIN_GUILD_ID)
-        synced = await bot.tree.sync(guild=guild)
-        print(f"🌙 Synced {len(synced)} elite slash commands")
-    else:
-        print("⚠️  Set MAIN_GUILD_ID for slash commands")
-    
-    print("🚀 Ready for premium service!")
-
-# ================= FINAL EXECUTION =================
+# ================= RUN BOT =================
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    try:
+        bot.run(TOKEN)
+    except discord.LoginFailure:
+        logger.error("Invalid TOKEN!")
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
