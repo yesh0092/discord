@@ -34,6 +34,7 @@ GIF_SUPPORT = ""
 COLOR_PRIMARY = 0x020617   # obsidian
 COLOR_SECONDARY = 0x1f2937 # slate
 COLOR_DANGER = 0x7c2d12    # deep red
+COLOR_GOLD = 0xD4AF37      # premium gold accent
 
 # ================= STATE =================
 
@@ -60,6 +61,7 @@ def luxury_embed(title=None, description=None, color=COLOR_PRIMARY):
         color=color,
         timestamp=datetime.utcnow()
     )
+    embed.set_footer(text="🌙 Elite Support Services | Powered by Premium Automation")
     return embed
 
 # ================= ONBOARDING VIEW =================
@@ -79,19 +81,26 @@ class OnboardingView(discord.ui.View):
                 pass
 
         await interaction.response.send_message(
-            "Thank you. Enjoy your time here ✨",
+            embed=luxury_embed(
+                title="✨ Welcome Aboard, Elite Member",
+                description="Thank you for sharing how you discovered our exclusive community. "
+                           "Your journey with us officially begins now. Explore the realms of premium "
+                           "conversations, luxurious events, and unparalleled experiences ahead. "
+                           "If assistance is ever required, our concierge support awaits via DM.",
+                color=COLOR_GOLD
+            ),
             ephemeral=True
         )
 
-    @discord.ui.button(label="Friends", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Friends", style=discord.ButtonStyle.primary, emoji="👥")
     async def friends(self, interaction, _):
         await self.finish(interaction)
 
-    @discord.ui.button(label="Social Media", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Social Media", style=discord.ButtonStyle.secondary, emoji="📱")
     async def social(self, interaction, _):
         await self.finish(interaction)
 
-    @discord.ui.button(label="Other", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Other", style=discord.ButtonStyle.success, emoji="🌐")
     async def other(self, interaction, _):
         await self.finish(interaction)
 
@@ -114,7 +123,10 @@ class CloseTicketView(discord.ui.View):
         ):
             await interaction.response.send_message(
                 embed=luxury_embed(
-                    description="You don’t have permission to close this ticket.",
+                    title="❌ Access Denied",
+                    description="You lack the authorized privileges to conclude this premium support session. "
+                               "Only the ticket originator, administrators, or designated Staff members may proceed. "
+                               "Please await proper escalation if further action is required.",
                     color=COLOR_DANGER
                 ),
                 ephemeral=True
@@ -126,7 +138,11 @@ class CloseTicketView(discord.ui.View):
 
         await interaction.response.send_message(
             embed=luxury_embed(
-                description="Ticket closed. This space will be archived."
+                title="🔒 Ticket Elegantly Concluded",
+                description="Your support session has been gracefully archived within our premium system. "
+                           "Thank you for utilizing our elite concierge services. Should your journey require "
+                           "further assistance, our doors remain open 24/7. Farewell for now ✨",
+                color=COLOR_SECONDARY
             )
         )
 
@@ -147,7 +163,13 @@ class SupportView(discord.ui.View):
         guild = get_guild()
         if not guild:
             await interaction.response.send_message(
-                "Support system is not configured yet.",
+                embed=luxury_embed(
+                    title="⚙️ System Configuration Pending",
+                    description="Our premium support infrastructure is currently undergoing elite setup. "
+                               "Please notify a Staff member to initialize via !setup command. "
+                               "We apologize for this momentary pause in luxury service.",
+                    color=COLOR_SECONDARY
+                ),
                 ephemeral=True
             )
             return
@@ -155,7 +177,10 @@ class SupportView(discord.ui.View):
         if self.user.id in TICKET_BANNED_USERS:
             await interaction.response.send_message(
                 embed=luxury_embed(
-                    description="You are restricted from creating support tickets.",
+                    title="🚫 Restricted Access",
+                    description="Your account has been temporarily restricted from premium ticket creation "
+                               "due to prior policy guidelines. For review or appeal, kindly contact administration "
+                               "directly. We maintain the highest standards of community excellence.",
                     color=COLOR_DANGER
                 ),
                 ephemeral=True
@@ -164,7 +189,13 @@ class SupportView(discord.ui.View):
 
         if self.user.id in OPEN_TICKETS:
             await interaction.response.send_message(
-                "You already have an active ticket.",
+                embed=luxury_embed(
+                    title="⏳ Active Session Detected",
+                    description="You currently maintain an open premium support channel. "
+                               "Please utilize your existing ticket for seamless continuity. "
+                               "Multiple sessions are reserved for escalated VIP matters only.",
+                    color=COLOR_SECONDARY
+                ),
                 ephemeral=True
             )
             return
@@ -189,8 +220,13 @@ class SupportView(discord.ui.View):
 
         await channel.send(
             embed=luxury_embed(
-                title="Support Ticket",
-                description=f"{self.user.mention}\nA staff member will assist you shortly."
+                title="🌙 Premium Support Ticket Activated",
+                description=f"**Esteemed Guest: {self.user.mention}**\n\n"
+                           "Your exclusive support suite has been elegantly provisioned. "
+                           "One of our elite Staff concierge specialists will attend to your matter "
+                           "with utmost priority and sophistication. Kindly articulate your request "
+                           "in detail below for optimal resolution. We appreciate your patronage ✨",
+                color=COLOR_GOLD
             ),
             view=CloseTicketView(self.user.id)
         )
@@ -200,13 +236,23 @@ class SupportView(discord.ui.View):
             if log:
                 await log.send(
                     embed=luxury_embed(
-                        description=f"🎟 Ticket opened by {self.user.mention}",
+                        title="📊 Ticket Log Entry",
+                        description=f"🎟 **New Premium Session Initiated**\n"
+                                   f"**Client:** {self.user.mention} ({self.user.id})\n"
+                                   f"**Channel:** {channel.mention}\n"
+                                   f"**Timestamp:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
                         color=COLOR_SECONDARY
                     )
                 )
 
         await interaction.response.send_message(
-            "Your ticket has been created.",
+            embed=luxury_embed(
+                title="✅ Ticket Suite Provisioned",
+                description="Your personalized support channel has been crafted with premium precision. "
+                           "Navigate to it now for immediate elite assistance. Thank you for choosing "
+                           "our luxury services—excellence awaits.",
+                color=COLOR_GOLD
+            ),
             ephemeral=True
         )
 
@@ -218,14 +264,22 @@ class SupportView(discord.ui.View):
             if log:
                 await log.send(
                     embed=luxury_embed(
-                        title="Personal Assistance",
-                        description=f"{self.user.mention} requested personal help.",
-                        color=COLOR_DANGER
+                        title="👑 VIP Personal Request",
+                        description=f"{self.user.mention} has summoned elite personal concierge assistance. "
+                                   f"**Priority:** High | **Response ETA:** Within 24 hours via DM.\n"
+                                   f"A dedicated specialist will reach out with tailored solutions.",
+                        color=COLOR_GOLD
                     )
                 )
 
         await interaction.response.send_message(
-            "A staff member will contact you privately within 24 hours.",
+            embed=luxury_embed(
+                title="🛎️ Personal Concierge Dispatched",
+                description="An elite Staff specialist has been notified and will contact you privately "
+                           "within 24 hours with bespoke, white-glove assistance. Your comfort and "
+                           "satisfaction remain our paramount commitment. Stand by for luxury service ✨",
+                color=COLOR_GOLD
+            ),
             ephemeral=True
         )
 
@@ -243,15 +297,20 @@ async def on_member_join(member):
         if ch:
             await ch.send(
                 embed=luxury_embed(
-                    description=f"✨ {member.mention} joined the server",
-                    color=COLOR_SECONDARY
+                    title="🌙 New Elite Arrival",
+                    description=f"✨ {member.mention} has gracefully entered our premium domain. "
+                               f"Welcome to a realm of sophistication, exclusive events, and unparalleled "
+                               f"community excellence. The stars align in your favor.",
+                    color=COLOR_GOLD
                 )
             )
 
     try:
         await member.send(
-            f"Welcome to **{member.guild.name}**.\n"
-            "If you need help, DM me `support`."
+            f"🌙 **Welcome to {member.guild.name}** 🌙\n\n"
+            "You have arrived at an exclusive sanctuary of premium discourse and luxury experiences. "
+            "To summon our elite support concierge at any moment, simply reply `support` within this DM. "
+            "Your journey of excellence begins now ✨"
         )
 
         if GIF_WELCOME:
@@ -259,8 +318,12 @@ async def on_member_join(member):
 
         msg = await member.send(
             embed=luxury_embed(
-                title="One quick question",
-                description="How did you discover this server?"
+                title="🌌 Discovery Inquiry",
+                description="**Esteemed New Arrival,**\n\n"
+                           "To tailor your premium onboarding, may we inquire: How did you discover "
+                           "this elite server? Your insight helps us refine our celestial invitation process. "
+                           "Select below for a seamless continuation ✨",
+                color=COLOR_SECONDARY
             ),
             view=OnboardingView(member)
         )
@@ -287,12 +350,27 @@ async def on_message(message):
                 await msg.delete()
             except:
                 pass
-            await message.channel.send("Thank you ✨")
+            await message.channel.send(
+                embed=luxury_embed(
+                    title="✨ Onboarding Complete",
+                    description="Thank you for your valued response. You are now fully integrated into "
+                               "our premium ecosystem. Dive into the wonders ahead—support remains "
+                               "a whisper away via `support`. Welcome to excellence 🌙",
+                    color=COLOR_GOLD
+                )
+            )
             return
 
         if message.content.lower() == "support":
             await message.channel.send(
-                "How would you like to proceed?",
+                embed=luxury_embed(
+                    title="🛎️ Elite Concierge Portal",
+                    description="**How may we elevate your experience today?**\n\n"
+                               "Access our premium support suite through the options below. "
+                               "Whether ticketed precision or personal white-glove service, "
+                               "your satisfaction is our eternal pursuit ✨",
+                    color=COLOR_PRIMARY
+                ),
                 view=SupportView(message.author)
             )
             if GIF_SUPPORT:
@@ -307,14 +385,16 @@ async def on_message(message):
 async def help(ctx):
     await ctx.send(
         embed=luxury_embed(
-            title="Bot Commands",
-            description=(
-                "`support` → DM the bot for support\n"
-                "`!announce <message>` → DM announcement (Admin)\n"
-                "`!welcome` → set welcome channel (Admin)\n"
-                "`!supportlog` → set support log channel (Admin)\n"
-                "`!autorole @role` → auto role on join"
-            )
+            title="🌙 Elite Command Codex",
+            description="**Premium Bot Arsenal:**\n"
+                       "`support` → Summon concierge via DM for bespoke assistance\n"
+                       "`!announce <message>` → Broadcast gilded announcements (Admin Elite)\n"
+                       "`!welcome` → Designate celestial welcome channel (Admin)\n"
+                       "`!supportlog` → Establish premium audit ledger (Admin)\n"
+                       "`!autorole @role` → Bestow automatic prestige upon arrivals\n"
+                       "`!ticketban/@unban @user` → Manage access to luxury tickets (Admin)\n\n"
+                       "All crafted for seamless, opulent server governance ✨",
+            color=COLOR_GOLD
         )
     )
 
@@ -324,7 +404,12 @@ async def welcome(ctx):
     global WELCOME_CHANNEL_ID, MAIN_GUILD_ID
     WELCOME_CHANNEL_ID = ctx.channel.id
     MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=luxury_embed(description="Welcome channel set."))
+    await ctx.send(embed=luxury_embed(
+        title="✅ Celestial Welcome Activated",
+        description="This channel is now eternally attuned for premium member arrivals. "
+                   "Gilded notifications will grace it upon every elite entrance. Excellence configured ✨",
+        color=COLOR_GOLD
+    ))
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -332,7 +417,12 @@ async def supportlog(ctx):
     global SUPPORT_LOG_CHANNEL_ID, MAIN_GUILD_ID
     SUPPORT_LOG_CHANNEL_ID = ctx.channel.id
     MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=luxury_embed(description="Support log channel set."))
+    await ctx.send(embed=luxury_embed(
+        title="📊 Premium Ledger Initialized",
+        description="Support sessions will now be immutably chronicled here for elite oversight. "
+                   "Every ticket activation logged with timestamps and details. Precision assured ✨",
+        color=COLOR_SECONDARY
+    ))
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -340,7 +430,12 @@ async def autorole(ctx, role: discord.Role):
     global AUTO_ROLE_ID, MAIN_GUILD_ID
     AUTO_ROLE_ID = role.id
     MAIN_GUILD_ID = ctx.guild.id
-    await ctx.send(embed=luxury_embed(description="Auto role set."))
+    await ctx.send(embed=luxury_embed(
+        title="🏅 Auto-Prestige Enabled",
+        description=f"The prestigious **{role.name}** mantle shall now be automatically bestowed "
+                   "upon every new arrival. Seamless elevation to community excellence ✨",
+        color=COLOR_GOLD
+    ))
 
 # ================= TICKET BAN =================
 
@@ -350,7 +445,9 @@ async def ticketban(ctx, user: discord.Member):
     TICKET_BANNED_USERS.add(user.id)
     await ctx.send(
         embed=luxury_embed(
-            description=f"{user.mention} has been banned from creating tickets.",
+            title="🚫 Ticket Privilege Revoked",
+            description=f"{user.mention} has been elegantly restricted from premium ticket creation. "
+                       "This measure upholds our standards of communal harmony and policy adherence.",
             color=COLOR_DANGER
         )
     )
@@ -361,7 +458,10 @@ async def ticketunban(ctx, user: discord.Member):
     TICKET_BANNED_USERS.discard(user.id)
     await ctx.send(
         embed=luxury_embed(
-            description=f"{user.mention} can create tickets again."
+            title="✅ Ticket Privileges Restored",
+            description=f"{user.mention} may once again access our elite support suites. "
+                       "Welcome back to full luxury service capabilities ✨",
+            color=COLOR_GOLD
         )
     )
 
@@ -372,10 +472,12 @@ async def ticketunban(ctx, user: discord.Member):
 async def announce(ctx, *, message: str):
     guild = ctx.guild
     embed = luxury_embed(
-        title="📢 Announcement",
-        description=message
+        title="📜 Imperial Proclamation",
+        description=message,
+        color=COLOR_GOLD
     )
-    embed.set_footer(text=guild.name)
+    embed.set_footer(text=f"From the Halls of {guild.name} | Elite Broadcast")
+    embed.set_thumbnail(url=bot.user.avatar.url if bot.user.avatar else None)
 
     sent = 0
     failed = 0
@@ -392,7 +494,11 @@ async def announce(ctx, *, message: str):
 
     await ctx.send(
         embed=luxury_embed(
-            description=f"Announcement sent.\nDelivered: {sent}\nFailed: {failed}",
+            title="📊 Broadcast Dispatch Complete",
+            description=f"**Gilded Decree Delivered:**\n"
+                       f"• **Successfully Transmitted:** {sent} elite recipients\n"
+                       f"• **Undelivered:** {failed} (likely DMs closed)\n\n"
+                       "Your imperial message has resonated across the realm ✨",
             color=COLOR_SECONDARY
         )
     )
@@ -401,6 +507,6 @@ async def announce(ctx, *, message: str):
 
 @bot.event
 async def on_ready():
-    print(f"✅ {bot.user} is online")
+    print(f"🌙 {bot.user} | Elite Luxury Mode: ONLINE ✨")
 
 bot.run(TOKEN)
