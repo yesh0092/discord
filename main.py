@@ -13,6 +13,8 @@ TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+intents.guilds = True  # REQUIRED for ban/kick events
+
 
 bot = commands.Bot(
     command_prefix="!",
@@ -502,8 +504,7 @@ async def announce(ctx, *, message: str):
             color=COLOR_SECONDARY
         )
     )
-
-# ================= MODERATION DM NOTIFIER (FIXED) =================
+# ================= MODERATION DM NOTIFIER =================
 
 @bot.event
 async def on_member_update(before, after):
@@ -517,18 +518,19 @@ async def on_member_update(before, after):
                         description=(
                             f"You have been temporarily timed out in **{after.guild.name}**.\n\n"
                             f"🕒 **Until:** {after.communication_disabled_until.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                            "Please take this time to review the server rules."
+                            "This action was taken to maintain community standards."
                         ),
                         color=COLOR_DANGER
                     )
                 )
-            except:
-                pass
+            except Exception as e:
+                print("Timeout DM failed:", e)
 
 
 @bot.event
 async def on_member_remove(member):
-    await asyncio.sleep(2)  # IMPORTANT delay
+    # KICK DETECTION (audit-log based)
+    await asyncio.sleep(2)
 
     try:
         async for entry in member.guild.audit_logs(
@@ -541,16 +543,16 @@ async def on_member_remove(member):
                             title="🔨 You Were Kicked",
                             description=(
                                 f"You have been removed from **{member.guild.name}**.\n\n"
-                                "If this was a mistake, you may contact the staff team."
+                                "If you believe this was a mistake, you may contact the staff team."
                             ),
                             color=COLOR_DANGER
                         )
                     )
-                except:
-                    pass
+                except Exception as e:
+                    print("Kick DM failed:", e)
                 return
-    except:
-        pass
+    except Exception as e:
+        print("Kick audit log error:", e)
 
 
 @bot.event
@@ -561,15 +563,13 @@ async def on_member_ban(guild, user):
                 title="🚫 You Were Banned",
                 description=(
                     f"You have been banned from **{guild.name}**.\n\n"
-                    "This action was taken due to serious rule violations."
+                    "This decision reflects a serious violation of server rules."
                 ),
                 color=COLOR_DANGER
             )
         )
-    except:
-        pass
-
-
+    except Exception as e:
+        print("Ban DM failed:", e)
 
 # ================= READY =================
 
