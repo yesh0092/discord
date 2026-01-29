@@ -1,2 +1,15 @@
+# --- Core Discord Library ---
 discord.py==2.4.0
-python-dotenv
+
+# --- Environment & Configuration ---
+python-dotenv>=1.0.1
+
+# --- Performance & Security ---
+# aiohttp is the engine for discord.py connections
+aiohttp>=3.10.0
+# PyNaCl is required for voice support and secure handshakes
+PyNaCl>=1.5.0
+
+# --- Utilities ---
+# Optional: helps with time manipulation for those timeouts
+python-dateutil>=2.9.0
