@@ -503,6 +503,75 @@ async def announce(ctx, *, message: str):
         )
     )
 
+# ================= MODERATION DM NOTIFIER =================
+
+@bot.event
+async def on_member_update(before, after):
+    # Timeout detection
+    if before.communication_disabled_until != after.communication_disabled_until:
+        if after.communication_disabled_until:
+            try:
+                await after.send(
+                    embed=luxury_embed(
+                        title="⏳ Temporary Timeout Applied",
+                        description=(
+                            f"You have been temporarily restricted in **{after.guild.name}**.\n\n"
+                            f"⏱ **Until:** {after.communication_disabled_until.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                            "This action was taken to preserve community standards. "
+                            "Once the timeout expires, your privileges will be fully restored."
+                        ),
+                        color=COLOR_DANGER
+                    )
+                )
+            except:
+                pass
+
+
+@bot.event
+async def on_member_remove(member):
+    # Kick detection (not ban)
+    await asyncio.sleep(1)
+    try:
+        async for entry in member.guild.audit_logs(limit=1, action=discord.AuditLogAction.kick):
+            if entry.target.id == member.id:
+                try:
+                    await member.send(
+                        embed=luxury_embed(
+                            title="🔨 You Have Been Removed",
+                            description=(
+                                f"You have been **kicked** from **{member.guild.name}**.\n\n"
+                                "If you believe this action was taken in error, "
+                                "you may contact the server staff for clarification."
+                            ),
+                            color=COLOR_DANGER
+                        )
+                    )
+                except:
+                    pass
+                return
+    except:
+        pass
+
+
+@bot.event
+async def on_member_ban(guild, user):
+    try:
+        await user.send(
+            embed=luxury_embed(
+                title="🚫 Server Ban Notice",
+                description=(
+                    f"You have been **banned** from **{guild.name}**.\n\n"
+                    "This decision reflects a serious violation of community policies. "
+                    "If an appeal process exists, you may reach out to the administration "
+                    "through appropriate external channels."
+                ),
+                color=COLOR_DANGER
+            )
+        )
+    except:
+        pass
+
+
 # ================= READY =================
 
 @bot.event
