@@ -3,7 +3,7 @@ import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ================= BASIC SETUP =================
 
@@ -13,8 +13,6 @@ TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.guilds = True  # REQUIRED for ban/kick events
-
 
 bot = commands.Bot(
     command_prefix="!",
@@ -63,7 +61,8 @@ def luxury_embed(title=None, description=None, color=COLOR_PRIMARY):
         color=color,
         timestamp=datetime.utcnow()
     )
-    embed.set_footer(text="🌙 Elite Support Services | Powered by Premium Automation")
+    # ✨ BRANDING ENHANCEMENT: Hellfire Hangout
+    embed.set_footer(text="🔥 Hellfire Hangout | Elite Support Services | Premium Automation")
     return embed
 
 # ================= ONBOARDING VIEW =================
@@ -86,9 +85,9 @@ class OnboardingView(discord.ui.View):
             embed=luxury_embed(
                 title="✨ Welcome Aboard, Elite Member",
                 description="Thank you for sharing how you discovered our exclusive community. "
-                           "Your journey with us officially begins now. Explore the realms of premium "
-                           "conversations, luxurious events, and unparalleled experiences ahead. "
-                           "If assistance is ever required, our concierge support awaits via DM.",
+                            "Your journey with us officially begins now. Explore the realms of premium "
+                            "conversations, luxurious events, and unparalleled experiences ahead. "
+                            "If assistance is ever required, our concierge support awaits via DM.",
                 color=COLOR_GOLD
             ),
             ephemeral=True
@@ -127,8 +126,8 @@ class CloseTicketView(discord.ui.View):
                 embed=luxury_embed(
                     title="❌ Access Denied",
                     description="You lack the authorized privileges to conclude this premium support session. "
-                               "Only the ticket originator, administrators, or designated Staff members may proceed. "
-                               "Please await proper escalation if further action is required.",
+                                "Only the ticket originator, administrators, or designated Staff members may proceed. "
+                                "Please await proper escalation if further action is required.",
                     color=COLOR_DANGER
                 ),
                 ephemeral=True
@@ -142,8 +141,8 @@ class CloseTicketView(discord.ui.View):
             embed=luxury_embed(
                 title="🔒 Ticket Elegantly Concluded",
                 description="Your support session has been gracefully archived within our premium system. "
-                           "Thank you for utilizing our elite concierge services. Should your journey require "
-                           "further assistance, our doors remain open 24/7. Farewell for now ✨",
+                            "Thank you for utilizing our elite concierge services. Should your journey require "
+                            "further assistance, our doors remain open 24/7. Farewell for now ✨",
                 color=COLOR_SECONDARY
             )
         )
@@ -168,8 +167,8 @@ class SupportView(discord.ui.View):
                 embed=luxury_embed(
                     title="⚙️ System Configuration Pending",
                     description="Our premium support infrastructure is currently undergoing elite setup. "
-                               "Please notify a Staff member to initialize via !setup command. "
-                               "We apologize for this momentary pause in luxury service.",
+                                "Please notify a Staff member to initialize via !setup command. "
+                                "We apologize for this momentary pause in luxury service.",
                     color=COLOR_SECONDARY
                 ),
                 ephemeral=True
@@ -181,8 +180,8 @@ class SupportView(discord.ui.View):
                 embed=luxury_embed(
                     title="🚫 Restricted Access",
                     description="Your account has been temporarily restricted from premium ticket creation "
-                               "due to prior policy guidelines. For review or appeal, kindly contact administration "
-                               "directly. We maintain the highest standards of community excellence.",
+                                "due to prior policy guidelines. For review or appeal, kindly contact administration "
+                                "directly. We maintain the highest standards of community excellence.",
                     color=COLOR_DANGER
                 ),
                 ephemeral=True
@@ -194,8 +193,8 @@ class SupportView(discord.ui.View):
                 embed=luxury_embed(
                     title="⏳ Active Session Detected",
                     description="You currently maintain an open premium support channel. "
-                               "Please utilize your existing ticket for seamless continuity. "
-                               "Multiple sessions are reserved for escalated VIP matters only.",
+                                "Please utilize your existing ticket for seamless continuity. "
+                                "Multiple sessions are reserved for escalated VIP matters only.",
                     color=COLOR_SECONDARY
                 ),
                 ephemeral=True
@@ -224,10 +223,10 @@ class SupportView(discord.ui.View):
             embed=luxury_embed(
                 title="🌙 Premium Support Ticket Activated",
                 description=f"**Esteemed Guest: {self.user.mention}**\n\n"
-                           "Your exclusive support suite has been elegantly provisioned. "
-                           "One of our elite Staff concierge specialists will attend to your matter "
-                           "with utmost priority and sophistication. Kindly articulate your request "
-                           "in detail below for optimal resolution. We appreciate your patronage ✨",
+                            "Your exclusive support suite has been elegantly provisioned. "
+                            "One of our elite Staff concierge specialists will attend to your matter "
+                            "with utmost priority and sophistication. Kindly articulate your request "
+                            "in detail below for optimal resolution. We appreciate your patronage ✨",
                 color=COLOR_GOLD
             ),
             view=CloseTicketView(self.user.id)
@@ -240,9 +239,9 @@ class SupportView(discord.ui.View):
                     embed=luxury_embed(
                         title="📊 Ticket Log Entry",
                         description=f"🎟 **New Premium Session Initiated**\n"
-                                   f"**Client:** {self.user.mention} ({self.user.id})\n"
-                                   f"**Channel:** {channel.mention}\n"
-                                   f"**Timestamp:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+                                    f"**Client:** {self.user.mention} ({self.user.id})\n"
+                                    f"**Channel:** {channel.mention}\n"
+                                    f"**Timestamp:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
                         color=COLOR_SECONDARY
                     )
                 )
@@ -251,8 +250,8 @@ class SupportView(discord.ui.View):
             embed=luxury_embed(
                 title="✅ Ticket Suite Provisioned",
                 description="Your personalized support channel has been crafted with premium precision. "
-                           "Navigate to it now for immediate elite assistance. Thank you for choosing "
-                           "our luxury services—excellence awaits.",
+                            "Navigate to it now for immediate elite assistance. Thank you for choosing "
+                            "our luxury services—excellence awaits.",
                 color=COLOR_GOLD
             ),
             ephemeral=True
@@ -268,8 +267,8 @@ class SupportView(discord.ui.View):
                     embed=luxury_embed(
                         title="👑 VIP Personal Request",
                         description=f"{self.user.mention} has summoned elite personal concierge assistance. "
-                                   f"**Priority:** High | **Response ETA:** Within 24 hours via DM.\n"
-                                   f"A dedicated specialist will reach out with tailored solutions.",
+                                    f"**Priority:** High | **Response ETA:** Within 24 hours via DM.\n"
+                                    f"A dedicated specialist will reach out with tailored solutions.",
                         color=COLOR_GOLD
                     )
                 )
@@ -278,8 +277,8 @@ class SupportView(discord.ui.View):
             embed=luxury_embed(
                 title="🛎️ Personal Concierge Dispatched",
                 description="An elite Staff specialist has been notified and will contact you privately "
-                           "within 24 hours with bespoke, white-glove assistance. Your comfort and "
-                           "satisfaction remain our paramount commitment. Stand by for luxury service ✨",
+                            "within 24 hours with bespoke, white-glove assistance. Your comfort and "
+                            "satisfaction remain our paramount commitment. Stand by for luxury service ✨",
                 color=COLOR_GOLD
             ),
             ephemeral=True
@@ -299,17 +298,17 @@ async def on_member_join(member):
         if ch:
             await ch.send(
                 embed=luxury_embed(
-                    title="🌙 New Elite Arrival",
+                    title="🔥 Welcome to Hellfire Hangout",
                     description=f"✨ {member.mention} has gracefully entered our premium domain. "
-                               f"Welcome to a realm of sophistication, exclusive events, and unparalleled "
-                               f"community excellence. The stars align in your favor.",
+                                f"Welcome to a realm of sophistication, exclusive events, and unparalleled "
+                                f"community excellence. The stars align in your favor.",
                     color=COLOR_GOLD
                 )
             )
 
     try:
         await member.send(
-            f"🌙 **Welcome to {member.guild.name}** 🌙\n\n"
+            f"🔥 **Welcome to Hellfire Hangout** 🔥\n\n"
             "You have arrived at an exclusive sanctuary of premium discourse and luxury experiences. "
             "To summon our elite support concierge at any moment, simply reply `support` within this DM. "
             "Your journey of excellence begins now ✨"
@@ -322,9 +321,9 @@ async def on_member_join(member):
             embed=luxury_embed(
                 title="🌌 Discovery Inquiry",
                 description="**Esteemed New Arrival,**\n\n"
-                           "To tailor your premium onboarding, may we inquire: How did you discover "
-                           "this elite server? Your insight helps us refine our celestial invitation process. "
-                           "Select below for a seamless continuation ✨",
+                            "To tailor your premium onboarding, may we inquire: How did you discover "
+                            "Hellfire Hangout? Your insight helps us refine our celestial invitation process. "
+                            "Select below for a seamless continuation ✨",
                 color=COLOR_SECONDARY
             ),
             view=OnboardingView(member)
@@ -343,6 +342,17 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # 🛡️ AUTO-SECURITY FEATURE: Invite Filter & Basic Spam
+    if message.guild:
+        # Check for unauthorized links
+        if "discord.gg/" in message.content.lower() or "discord.com/invite/" in message.content.lower():
+            if not message.author.guild_permissions.manage_messages:
+                await message.delete()
+                warning = await message.channel.send(f"{message.author.mention}, unauthorized invites are restricted in **Hellfire Hangout**.")
+                await asyncio.sleep(5)
+                await warning.delete()
+                return
+
     if isinstance(message.channel, discord.DMChannel):
         if message.author.id in ONBOARDING_MESSAGES:
             try:
@@ -356,8 +366,8 @@ async def on_message(message):
                 embed=luxury_embed(
                     title="✨ Onboarding Complete",
                     description="Thank you for your valued response. You are now fully integrated into "
-                               "our premium ecosystem. Dive into the wonders ahead—support remains "
-                               "a whisper away via `support`. Welcome to excellence 🌙",
+                                "the **Hellfire Hangout** ecosystem. Dive into the wonders ahead—support remains "
+                                "a whisper away via `support`. Welcome to excellence 🌙",
                     color=COLOR_GOLD
                 )
             )
@@ -368,9 +378,9 @@ async def on_message(message):
                 embed=luxury_embed(
                     title="🛎️ Elite Concierge Portal",
                     description="**How may we elevate your experience today?**\n\n"
-                               "Access our premium support suite through the options below. "
-                               "Whether ticketed precision or personal white-glove service, "
-                               "your satisfaction is our eternal pursuit ✨",
+                                "Access our premium support suite through the options below. "
+                                "Whether ticketed precision or personal white-glove service, "
+                                "your satisfaction is our eternal pursuit ✨",
                     color=COLOR_PRIMARY
                 ),
                 view=SupportView(message.author)
@@ -381,6 +391,57 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# ================= MODERATION COMMANDS (NEW) =================
+
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
+    """DMs a luxury exit notice then kicks the member."""
+    try:
+        await member.send(embed=luxury_embed(
+            title="🚫 Departure Notice",
+            description=f"Your presence at **Hellfire Hangout** has been concluded.\n\n"
+                        f"**Action:** Kick\n**Reason:** {reason}",
+            color=COLOR_DANGER
+        ))
+    except:
+        pass
+    await member.kick(reason=reason)
+    await ctx.send(embed=luxury_embed(title="Successfully Kicked", description=f"{member.mention} has been removed from the realm.", color=COLOR_GOLD))
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
+    """DMs a luxury exit notice then bans the member."""
+    try:
+        await member.send(embed=luxury_embed(
+            title="⚖️ Imperial Banishment",
+            description=f"You have been permanently banished from **Hellfire Hangout**.\n\n"
+                        f"**Action:** Ban\n**Reason:** {reason}",
+            color=COLOR_DANGER
+        ))
+    except:
+        pass
+    await member.ban(reason=reason)
+    await ctx.send(embed=luxury_embed(title="Successfully Banned", description=f"{member.mention} has been permanently exiled.", color=COLOR_GOLD))
+
+@bot.command()
+@commands.has_permissions(moderate_members=True)
+async def timeout(ctx, member: discord.Member, minutes: int, *, reason="No reason provided"):
+    """DMs a luxury notice then silences the member."""
+    duration = timedelta(minutes=minutes)
+    try:
+        await member.send(embed=luxury_embed(
+            title="⏳ Silence Bestowed",
+            description=f"Your privileges at **Hellfire Hangout** have been temporarily suspended.\n\n"
+                        f"**Duration:** {minutes} minutes\n**Reason:** {reason}",
+            color=COLOR_SECONDARY
+        ))
+    except:
+        pass
+    await member.timeout(duration, reason=reason)
+    await ctx.send(embed=luxury_embed(title="Timeout Applied", description=f"{member.mention} is now in a period of reflection for {minutes}m.", color=COLOR_GOLD))
+
 # ================= COMMANDS =================
 
 @bot.command()
@@ -389,13 +450,16 @@ async def help(ctx):
         embed=luxury_embed(
             title="🌙 Elite Command Codex",
             description="**Premium Bot Arsenal:**\n"
-                       "`support` → Summon concierge via DM for bespoke assistance\n"
-                       "`!announce <message>` → Broadcast gilded announcements (Admin Elite)\n"
-                       "`!welcome` → Designate celestial welcome channel (Admin)\n"
-                       "`!supportlog` → Establish premium audit ledger (Admin)\n"
-                       "`!autorole @role` → Bestow automatic prestige upon arrivals\n"
-                       "`!ticketban/@unban @user` → Manage access to luxury tickets (Admin)\n\n"
-                       "All crafted for seamless, opulent server governance ✨",
+                        "`support` → Summon concierge via DM for bespoke assistance\n"
+                        "`!announce <msg>` → Broadcast gilded announcements (Admin Elite)\n"
+                        "`!kick @user <reason>` → Soft departure with DM notice\n"
+                        "`!ban @user <reason>` → Permanent exile with DM notice\n"
+                        "`!timeout @user <mins> <reason>` → Temporary silence with DM notice\n"
+                        "`!welcome` → Designate celestial welcome channel (Admin)\n"
+                        "`!supportlog` → Establish premium audit ledger (Admin)\n"
+                        "`!autorole @role` → Bestow automatic prestige\n"
+                        "`!ticketban/@unban @user` → Manage access to luxury tickets\n\n"
+                        "All crafted for **Hellfire Hangout** governance ✨",
             color=COLOR_GOLD
         )
     )
@@ -408,8 +472,7 @@ async def welcome(ctx):
     MAIN_GUILD_ID = ctx.guild.id
     await ctx.send(embed=luxury_embed(
         title="✅ Celestial Welcome Activated",
-        description="This channel is now eternally attuned for premium member arrivals. "
-                   "Gilded notifications will grace it upon every elite entrance. Excellence configured ✨",
+        description="This channel is now eternally attuned for premium member arrivals at **Hellfire Hangout**.",
         color=COLOR_GOLD
     ))
 
@@ -421,8 +484,7 @@ async def supportlog(ctx):
     MAIN_GUILD_ID = ctx.guild.id
     await ctx.send(embed=luxury_embed(
         title="📊 Premium Ledger Initialized",
-        description="Support sessions will now be immutably chronicled here for elite oversight. "
-                   "Every ticket activation logged with timestamps and details. Precision assured ✨",
+        description="Support sessions will now be immutably chronicled here for elite oversight.",
         color=COLOR_SECONDARY
     ))
 
@@ -434,8 +496,7 @@ async def autorole(ctx, role: discord.Role):
     MAIN_GUILD_ID = ctx.guild.id
     await ctx.send(embed=luxury_embed(
         title="🏅 Auto-Prestige Enabled",
-        description=f"The prestigious **{role.name}** mantle shall now be automatically bestowed "
-                   "upon every new arrival. Seamless elevation to community excellence ✨",
+        description=f"The prestigious **{role.name}** mantle shall now be automatically bestowed.",
         color=COLOR_GOLD
     ))
 
@@ -448,8 +509,7 @@ async def ticketban(ctx, user: discord.Member):
     await ctx.send(
         embed=luxury_embed(
             title="🚫 Ticket Privilege Revoked",
-            description=f"{user.mention} has been elegantly restricted from premium ticket creation. "
-                       "This measure upholds our standards of communal harmony and policy adherence.",
+            description=f"{user.mention} has been elegantly restricted from premium ticket creation.",
             color=COLOR_DANGER
         )
     )
@@ -461,8 +521,7 @@ async def ticketunban(ctx, user: discord.Member):
     await ctx.send(
         embed=luxury_embed(
             title="✅ Ticket Privileges Restored",
-            description=f"{user.mention} may once again access our elite support suites. "
-                       "Welcome back to full luxury service capabilities ✨",
+            description=f"{user.mention} may once again access our elite support suites.",
             color=COLOR_GOLD
         )
     )
@@ -478,7 +537,7 @@ async def announce(ctx, *, message: str):
         description=message,
         color=COLOR_GOLD
     )
-    embed.set_footer(text=f"From the Halls of {guild.name} | Elite Broadcast")
+    embed.set_footer(text=f"From the Halls of Hellfire Hangout | Elite Broadcast")
     embed.set_thumbnail(url=bot.user.avatar.url if bot.user.avatar else None)
 
     sent = 0
@@ -498,83 +557,17 @@ async def announce(ctx, *, message: str):
         embed=luxury_embed(
             title="📊 Broadcast Dispatch Complete",
             description=f"**Gilded Decree Delivered:**\n"
-                       f"• **Successfully Transmitted:** {sent} elite recipients\n"
-                       f"• **Undelivered:** {failed} (likely DMs closed)\n\n"
-                       "Your imperial message has resonated across the realm ✨",
+                        f"• **Successfully Transmitted:** {sent} elite recipients\n"
+                        f"• **Undelivered:** {failed} (likely DMs closed)\n\n"
+                        "Your imperial message has resonated across the realm ✨",
             color=COLOR_SECONDARY
         )
     )
-# ================= MODERATION DM NOTIFIER =================
-
-@bot.event
-async def on_member_update(before, after):
-    # TIMEOUT DETECTION
-    if before.communication_disabled_until != after.communication_disabled_until:
-        if after.communication_disabled_until:
-            try:
-                await after.send(
-                    embed=luxury_embed(
-                        title="⏳ Timeout Applied",
-                        description=(
-                            f"You have been temporarily timed out in **{after.guild.name}**.\n\n"
-                            f"🕒 **Until:** {after.communication_disabled_until.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                            "This action was taken to maintain community standards."
-                        ),
-                        color=COLOR_DANGER
-                    )
-                )
-            except Exception as e:
-                print("Timeout DM failed:", e)
-
-
-@bot.event
-async def on_member_remove(member):
-    # KICK DETECTION (audit-log based)
-    await asyncio.sleep(2)
-
-    try:
-        async for entry in member.guild.audit_logs(
-            limit=5, action=discord.AuditLogAction.kick
-        ):
-            if entry.target.id == member.id:
-                try:
-                    await member.send(
-                        embed=luxury_embed(
-                            title="🔨 You Were Kicked",
-                            description=(
-                                f"You have been removed from **{member.guild.name}**.\n\n"
-                                "If you believe this was a mistake, you may contact the staff team."
-                            ),
-                            color=COLOR_DANGER
-                        )
-                    )
-                except Exception as e:
-                    print("Kick DM failed:", e)
-                return
-    except Exception as e:
-        print("Kick audit log error:", e)
-
-
-@bot.event
-async def on_member_ban(guild, user):
-    try:
-        await user.send(
-            embed=luxury_embed(
-                title="🚫 You Were Banned",
-                description=(
-                    f"You have been banned from **{guild.name}**.\n\n"
-                    "This decision reflects a serious violation of server rules."
-                ),
-                color=COLOR_DANGER
-            )
-        )
-    except Exception as e:
-        print("Ban DM failed:", e)
 
 # ================= READY =================
 
 @bot.event
 async def on_ready():
-    print(f"🌙 {bot.user} | Elite Luxury Mode: ONLINE ✨")
+    print(f"🌙 {bot.user} | Hellfire Hangout Mode: ONLINE ✨")
 
 bot.run(TOKEN)
