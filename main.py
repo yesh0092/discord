@@ -13,6 +13,7 @@ TOKEN = os.getenv("TOKEN")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+intents.moderation = True  # ✨ REQUIRED: To monitor manual bans/kicks/timeouts
 
 bot = commands.Bot(
     command_prefix="!",
@@ -283,6 +284,62 @@ class SupportView(discord.ui.View):
             ),
             ephemeral=True
         )
+
+# ================= AUTOMATIC AUDIT LOG HANDLERS (NEW) =================
+
+@bot.event
+async def on_member_ban(guild, user):
+    """Automatically DMs user when banned via Discord UI."""
+    await asyncio.sleep(1) # Wait for Audit Log to sync
+    async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1):
+        if entry.target.id == user.id:
+            try:
+                await user.send(embed=luxury_embed(
+                    title="⚖️ Imperial Banishment",
+                    description=f"You have been permanently banished from **Hellfire Hangout**.\n\n"
+                                f"**Moderator:** {entry.user}\n"
+                                f"**Reason:** {entry.reason or 'Policy violation.'}",
+                    color=COLOR_DANGER
+                ))
+            except: pass
+
+@bot.event
+async def on_member_remove(member):
+    """Detects if a member was kicked (manually) and DMs them."""
+    await asyncio.sleep(1)
+    async for entry in member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=1):
+        if entry.target.id == member.id:
+            # Check if kick happened within the last 10 seconds to avoid false triggers
+            if (datetime.utcnow() - entry.created_at.replace(tzinfo=None)).total_seconds() < 10:
+                try:
+                    await member.send(embed=luxury_embed(
+                        title="🚫 Departure Notice",
+                        description=f"Your presence at **Hellfire Hangout** has been concluded.\n\n"
+                                    f"**Action:** Manual Kick\n"
+                                    f"**Moderator:** {entry.user}\n"
+                                    f"**Reason:** {entry.reason or 'Management decision.'}",
+                        color=COLOR_DANGER
+                    ))
+                except: pass
+
+@bot.event
+async def on_member_update(before, after):
+    """Detects when a user is timed out via Discord UI."""
+    if before.timed_out_until != after.timed_out_until and after.timed_out_until is not None:
+        await asyncio.sleep(1)
+        async for entry in after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=1):
+            if entry.target.id == after.id:
+                try:
+                    await after.send(embed=luxury_embed(
+                        title="⏳ Silence Bestowed",
+                        description=f"Your privileges at **Hellfire Hangout** have been temporarily suspended.\n\n"
+                                    f"**Status:** Timed Out\n"
+                                    f"**Moderator:** {entry.user}\n"
+                                    f"**Until:** {after.timed_out_until.strftime('%Y-%m-%d %H:%M UTC')}\n"
+                                    f"**Reason:** {entry.reason or 'Reflection period required.'}",
+                        color=COLOR_SECONDARY
+                    ))
+                except: pass
 
 # ================= MEMBER JOIN =================
 
